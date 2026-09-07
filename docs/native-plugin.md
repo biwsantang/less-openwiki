@@ -42,6 +42,11 @@ generated documentation page. Durable repository outputs are:
 - `openwiki/.page-manifest.json` for completed-page coverage; and
 - `openwiki/.last-update.json` after completion or interruption.
 
+The hook package includes its pinned YAML reader, so OKF front matter is
+interpreted consistently on a clean Codex or Claude Code installation without
+an additional host-level package installation. Its bundled-dependency notice is
+kept beside the runtime artifact.
+
 The skill uses temporary, hook-consumed intent files while a run is active: a
 semantic plan first, then a page-local Claims intent before each factual page.
 For updates, the plan may intentionally omit pages: the lifecycle deterministically

@@ -1,6 +1,7 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hash, isDirectory, relative } from "./storage.mjs";
+import { parse, stringify } from "./vendor/yaml.mjs";
 
 /**
  * Brings existing factual pages to the minimum OKF shape before an update.
@@ -63,15 +64,26 @@ function repairOkfFrontmatter(content, file, conceptType) {
       replacements.set(name, []);
   }
   const sources = fields.get("sources");
-  if (sources && !hasUsableSources(sources)) replacements.set("sources", []);
+  if (sources) {
+    const valid = validSources(sources);
+    if (valid.length !== sources.parsed.length)
+      replacements.set(
+        "sources",
+        valid.length ? renderStructuredList("sources", valid) : [],
+      );
+  }
   const status = fields.get("status");
   if (
     status &&
-    !["draft", "stable", "deprecated"].includes(status.value.trim())
+    (typeof status.parsed !== "string" ||
+      !["draft", "stable", "deprecated"].includes(status.parsed))
   )
     replacements.set("status", []);
   const staleAfter = fields.get("stale_after");
-  if (staleAfter && !isIsoDateTime(staleAfter.value.trim()))
+  if (
+    staleAfter &&
+    (typeof staleAfter.parsed !== "string" || !isIsoDateTime(staleAfter.parsed))
+  )
     replacements.set("stale_after", []);
   if (replacements.size === 0) return content;
   const frontmatter = rewriteFrontmatter(match[1], fields, replacements);
@@ -79,6 +91,18 @@ function repairOkfFrontmatter(content, file, conceptType) {
 }
 
 function frontmatterFields(frontmatter) {
+  let parsed;
+  try {
+    parsed = parse(`\n${frontmatter}`, {
+      maxAliasCount: 100,
+      schema: "core",
+      uniqueKeys: true,
+    });
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return null;
   const lines = frontmatter.split(/\r?\n/u);
   const fields = new Map();
   let current;
@@ -92,6 +116,7 @@ function frontmatterFields(frontmatter) {
       end: lines.length,
       key: match[1],
       lines,
+      parsed: parsed[match[1]],
       start: index,
       value: match[2] ?? "",
     };
@@ -102,112 +127,60 @@ function frontmatterFields(frontmatter) {
 }
 
 function frontmatterLooksComplete(fields) {
-  return [...fields.values()].every((field) => {
-    const raw = field.value.trim();
-    if (/^["']/u.test(raw)) return raw.length > 1 && raw.endsWith(raw[0]);
-    if (/^\[/u.test(raw)) return raw.endsWith("]");
-    if (/^\{/u.test(raw)) return raw.endsWith("}");
-    return true;
-  });
+  return Boolean(fields);
 }
 
 function isNonEmptyYamlString(field) {
-  if (!field) return false;
-  const raw = field.value.trim();
-  if (/^[|>][+-]?\s*(?:#.*)?$/u.test(raw))
-    return (
-      field.end > field.start + 1 &&
-      field.lines?.slice(field.start + 1, field.end).some((line) => line.trim())
-    );
-  if (!raw || /^(?:null|~|true|false|[\[{]|-|&|\*|!)/iu.test(raw)) return false;
-  if (/^[+-]?(?:\d|\.\d)/u.test(raw)) return false;
-  const quote = /^(["'])(.*)\1\s*$/u.exec(raw);
-  return quote ? Boolean(quote[2].trim()) : !/^['"]/u.test(raw);
+  return typeof field?.parsed === "string" && Boolean(field.parsed.trim());
 }
 
 function repairTags(field) {
-  const raw = field.value.trim();
-  const candidates = raw
-    ? raw.startsWith("[") && raw.endsWith("]")
-      ? raw.slice(1, -1).split(",")
-      : []
-    : field.lines
-        .slice(field.start + 1, field.end)
-        .map((line) => /^\s*-\s*(.*?)\s*$/u.exec(line)?.[1] ?? "");
-  const tags = candidates
-    .map((value) => value.trim())
-    .filter((value) => isInlineYamlString(value));
-  return tags.length ? ["tags:", ...tags.map((tag) => `  - ${tag}`)] : [];
-}
-
-function isInlineYamlString(value) {
-  if (!value || /^(?:null|~|true|false|[\[{]|-|&|\*|!)/iu.test(value))
-    return false;
-  if (/^[+-]?(?:\d|\.\d)/u.test(value)) return false;
-  const quote = /^(["'])(.*)\1\s*$/u.exec(value);
-  return quote ? Boolean(quote[2].trim()) : !/^['"]/u.test(value);
+  const tags = Array.isArray(field.parsed)
+    ? field.parsed.filter(
+        (tag) => typeof tag === "string" && Boolean(tag.trim()),
+      )
+    : [];
+  return tags.length ? renderStructuredList("tags", tags) : [];
 }
 
 function isValidActorEvents(field, allowList) {
-  const raw = field.value.trim();
-  if (raw.startsWith("{")) return isActorEvent(raw);
-  const lines = field.lines.slice(field.start + 1, field.end);
-  if (!raw && lines.length) {
-    const events = allowList ? splitActorEvents(lines) : [lines];
-    return (
-      events.length > 0 && events.every((event) => isActorEventLines(event))
-    );
-  }
-  return false;
-}
-
-function splitActorEvents(lines) {
-  const events = [];
-  let current = [];
-  for (const line of lines) {
-    if (/^\s*-\s*by:/u.test(line) && current.length) {
-      events.push(current);
-      current = [];
-    }
-    current.push(line);
-  }
-  if (current.length) events.push(current);
-  return events;
-}
-
-function isActorEvent(value) {
-  const fields = new Map(
-    value
-      .replace(/^\{\s*|\s*\}$/gu, "")
-      .split(",")
-      .map((entry) => entry.split(/:\s*/u, 2).map((part) => part.trim())),
-  );
+  const events =
+    allowList && Array.isArray(field.parsed) ? field.parsed : [field.parsed];
   return (
-    isInlineYamlString(fields.get("by") ?? "") &&
-    (!fields.has("at") || isIsoDateTime(unquote(fields.get("at"))))
+    events.length > 0 &&
+    events.every(
+      (event) =>
+        event &&
+        typeof event === "object" &&
+        !Array.isArray(event) &&
+        typeof event.by === "string" &&
+        event.by.trim() &&
+        (event.at === undefined ||
+          (typeof event.at === "string" && isIsoDateTime(event.at))),
+    )
   );
 }
 
-function isActorEventLines(lines) {
-  const values = new Map();
-  for (const line of lines) {
-    const match = /^\s*(?:-\s*)?(by|at):\s*(.*?)\s*$/u.exec(line);
-    if (match) values.set(match[1], match[2]);
-  }
-  return (
-    isInlineYamlString(values.get("by") ?? "") &&
-    (!values.has("at") || isIsoDateTime(unquote(values.get("at"))))
+function validSources(field) {
+  if (!Array.isArray(field.parsed)) return [];
+  return field.parsed.filter(
+    (source) =>
+      source &&
+      typeof source === "object" &&
+      !Array.isArray(source) &&
+      typeof source.resource === "string" &&
+      source.resource.trim(),
   );
 }
 
-function hasUsableSources(field) {
-  const raw = field.value.trim();
-  if (!raw.startsWith("[")) return true;
-  return /(?:^|[,{\s])resource\s*:/u.test(raw);
-}
-
-function unquote(value) {
-  return /^(["'])(.*)\1$/u.exec(value ?? "")?.[2] ?? value;
+function renderStructuredList(key, values) {
+  return [
+    `${key}:`,
+    ...stringify(values, { lineWidth: 0 })
+      .trimEnd()
+      .split("\n")
+      .map((line) => `  ${line}`),
+  ];
 }
 
 function isIsoDateTime(value) {

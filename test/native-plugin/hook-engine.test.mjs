@@ -22,6 +22,7 @@ import {
   finalizeGeneratedProvenance,
   finalizePage,
   finalizeWiki,
+  normalizePageOkf,
   normalizeWikiOkf,
 } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
@@ -469,6 +470,25 @@ test("OKF migration repairs owned scalar fields without discarding parseable ext
     await readFile(page, "utf8"),
     '---\ntype: "Reference"\ntitle: "Existing"\nauthor: Ada\nopenwiki_generated: true\n---\n# Existing\n',
   );
+});
+
+test("OKF migration uses YAML structure when repairing source records", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "existing.md");
+  await writeFile(
+    page,
+    "---\ntype: Reference\ntitle: >-\n  Existing: structured\nsources:\n  - resource: repo://README.md\n    annotation: { owner: docs }\n  - annotation: missing-resource\nproducer_extension:\n  nested: true\n---\n# Existing\n",
+    "utf8",
+  );
+
+  await normalizePageOkf(root, "openwiki/existing.md");
+
+  const normalized = await readFile(page, "utf8");
+  assert.match(normalized, /title: >-/u);
+  assert.match(normalized, /producer_extension:/u);
+  assert.match(normalized, /resource: repo:\/\/README\.md/u);
+  assert.doesNotMatch(normalized, /missing-resource/u);
 });
 
 test("OKF migration falls back cleanly when front matter is structurally malformed", async (t) => {

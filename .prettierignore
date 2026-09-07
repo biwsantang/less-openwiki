@@ -4,3 +4,4 @@ node_modules
 *.tgz
 pnpm-lock.yaml
 /openwiki/
+plugins/less-openwiki/runtime/vendor/yaml.mjs
