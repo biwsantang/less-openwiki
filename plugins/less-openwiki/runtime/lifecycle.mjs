@@ -26,6 +26,7 @@ import {
   preflightClaims,
   reconcileClaims,
   refreshClaimsPageVersion,
+  removeOrphanClaims,
   removeClaims,
 } from "./claims.mjs";
 import { finalizePage, finalizeWiki, normalizeWikiOkf } from "./okf.mjs";
@@ -213,6 +214,7 @@ export async function finish(root) {
     await rm(path.join(root, page), { force: true });
     await removeClaims(root, page);
   }
+  await removeOrphanClaims(root);
   const pages = await factualPages(root);
   for (const file of pages) {
     const validation = await validatePage(root, relative(root, file));

@@ -358,6 +358,42 @@ test("malformed durable Claims state fails closed during preflight", async (t) =
   );
 });
 
+test("Claims preflight groups multiple stale evidence records per Claim", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  await writeFile(path.join(root, "second.txt"), "second\n", "utf8");
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion: hash(
+      await readFile(path.join(root, "openwiki", "quickstart.md")),
+    ),
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+    claims: [
+      {
+        id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+        statement: "The fixture has two source files.",
+        evidence: [
+          { resource: "repo://README.md", version: "stale" },
+          { resource: "repo://second.txt", version: "stale" },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(await preflightClaims(root), [
+    {
+      page: "/openwiki/quickstart.md",
+      kind: "stale",
+      claimId: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+      resources: ["repo://README.md", "repo://second.txt"],
+    },
+  ]);
+});
+
 test("the update window contains visible committed and untracked source paths", async (t) => {
   const root = await fixture(t);
   execFileSync("git", ["config", "user.email", "fixture@example.com"], {

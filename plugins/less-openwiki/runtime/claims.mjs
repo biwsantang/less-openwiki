@@ -22,40 +22,66 @@ export function claimsPath(root, page) {
 
 export async function preflightClaims(root) {
   const issues = [];
+  const resolutions = new Map();
   const claimsRoot = path.join(root, "openwiki", ".claims");
   if (!(await isFile(claimsRoot)) && !(await directoryExists(claimsRoot)))
     return issues;
   for (const file of await jsonFiles(claimsRoot)) {
     const sidecar = await loadClaims(file, { required: true });
     const page = `openwiki/${relative(claimsRoot, file).replace(/\.json$/u, ".md")}`;
-    if (!isFactualPage(page)) continue;
+    if (!isFactualPage(page) || !(await isFile(path.join(root, page))))
+      continue;
     for (const claim of sidecar.claims ?? []) {
+      const changed = [];
+      const unresolved = [];
       for (const evidence of claim.evidence ?? []) {
-        const current = await resolveRepositoryEvidence(
-          root,
-          evidence.resource,
-          evidence.version,
-        );
-        if (!current)
-          issues.push({
-            page: `/${page}`,
-            kind: "unresolved",
-            claimId: claim.id,
-            resources: [evidence.resource],
-          });
+        const key = `${evidence.resource}\0${evidence.version}`;
+        let current = resolutions.get(key);
+        if (current === undefined) {
+          current = await resolveRepositoryEvidence(
+            root,
+            evidence.resource,
+            evidence.version,
+          );
+          resolutions.set(key, current ?? null);
+        }
+        if (!current) unresolved.push(evidence.resource);
         else if (current.version !== evidence.version)
-          issues.push({
-            page: `/${page}`,
-            kind: "stale",
-            claimId: claim.id,
-            resources: [evidence.resource],
-          });
+          changed.push(evidence.resource);
       }
+      if (unresolved.length)
+        issues.push({
+          page: `/${page}`,
+          kind: "unresolved",
+          claimId: claim.id,
+          resources: [...new Set(unresolved)].sort(),
+        });
+      else if (changed.length)
+        issues.push({
+          page: `/${page}`,
+          kind: "stale",
+          claimId: claim.id,
+          resources: [...new Set(changed)].sort(),
+        });
     }
   }
   return issues.sort((a, b) =>
-    `${a.page}:${a.claimId}`.localeCompare(`${b.page}:${b.claimId}`),
+    `${a.page}:${a.kind}:${a.claimId}`.localeCompare(
+      `${b.page}:${b.kind}:${b.claimId}`,
+    ),
   );
+}
+
+/** Removes valid factual sidecars whose page was deleted, after a full run. */
+export async function removeOrphanClaims(root) {
+  const claimsRoot = path.join(root, "openwiki", ".claims");
+  if (!(await directoryExists(claimsRoot))) return;
+  for (const file of await jsonFiles(claimsRoot)) {
+    await loadClaims(file, { required: true });
+    const page = `openwiki/${relative(claimsRoot, file).replace(/\.json$/u, ".md")}`;
+    if (isFactualPage(page) && !(await isFile(path.join(root, page))))
+      await rm(file, { force: true });
+  }
 }
 
 export async function reconcileClaims(root, page, intent, actor) {
