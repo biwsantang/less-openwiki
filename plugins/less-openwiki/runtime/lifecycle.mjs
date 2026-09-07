@@ -357,7 +357,8 @@ async function acceptPlan(root, state) {
     state.language = intent.language.trim();
   state.languageChanged = Boolean(
     state.previousLastUpdate?.language &&
-    state.previousLastUpdate.language !== state.language,
+    primaryLanguage(state.previousLastUpdate.language) !==
+      primaryLanguage(state.language),
   );
   state.requiredRewritePages = state.languageChanged
     ? state.initialPages.filter((page) => !deletePages.includes(page.slice(1)))
@@ -491,6 +492,14 @@ function titleFromPage(page) {
     .filter(Boolean)
     .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
     .join(" ");
+}
+
+function primaryLanguage(language) {
+  try {
+    return new Intl.Locale(language).language;
+  } catch {
+    return language;
+  }
 }
 
 async function loadRun(root) {

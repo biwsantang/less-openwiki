@@ -252,6 +252,48 @@ test("a changed documentation language adds every omitted factual page to the pl
   );
 });
 
+test("a regional language variant does not force a full page rewrite", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en-US",
+  });
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    language: "en-GB",
+    pages: [
+      {
+        path: "architecture.md",
+        title: "Architecture",
+        purpose: "Document the architecture.",
+      },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(state.languageChanged, false);
+  assert.deepEqual(state.requiredRewritePages, []);
+});
+
 test("an update normalizes an existing page with unusable front matter", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
