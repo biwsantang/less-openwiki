@@ -92,10 +92,12 @@ export async function guardWrite(root, input) {
   const state = await loadRun(root);
   if (!state) return {};
   const source = await sourceSnapshot(root);
-  if (source.fingerprint !== state.sourceFingerprint)
+  if (source.fingerprint !== state.sourceFingerprint) {
+    await invalidateForSourceDrift(root, state, source);
     return deny(
-      "Repository source changed during this documentation run. The active plan is stale; start a fresh documentation update before writing generated pages.",
+      "Repository source changed during this documentation run. The active plan was invalidated; write a fresh semantic plan before generated pages.",
     );
+  }
   const targets = extractTargets(input, root);
   const protectedTarget = targets.find((target) => ownedState(root, target));
   if (protectedTarget)
@@ -150,11 +152,13 @@ export async function checkpoint(root, input) {
   const current = currentJob(state);
   if (!current || !targets.includes(path.join(root, current.path))) return {};
   const source = await sourceSnapshot(root);
-  if (source.fingerprint !== state.sourceFingerprint)
+  if (source.fingerprint !== state.sourceFingerprint) {
+    await invalidateForSourceDrift(root, state, source);
     return {
       systemMessage:
-        "Less OpenWiki: repository source changed; the current plan is stale and was preserved for inspection.",
+        "Less OpenWiki: repository source changed; the current plan was invalidated and must be replaced.",
     };
+  }
   const validation = await validatePage(root, current.path);
   if (!validation.ok) {
     await rollbackPage(root, state, current.path);
@@ -246,6 +250,23 @@ export async function interrupt(root) {
     language: state.language,
   });
   return {};
+}
+
+async function invalidateForSourceDrift(root, state, source) {
+  state.phase = "planning";
+  state.sourceFingerprint = source.fingerprint;
+  if (source.gitHead) state.targetGitHead = source.gitHead;
+  else delete state.targetGitHead;
+  delete state.plan;
+  await writeRun(root, state);
+  await writeJson(lastUpdatePath(root), {
+    updatedAt: now(),
+    command: state.mode,
+    ...(state.baseGitHead ? { gitHead: state.baseGitHead } : {}),
+    model: state.actor.metadataModel,
+    status: "interrupted",
+    language: state.language,
+  });
 }
 
 async function acceptPlan(root, state) {

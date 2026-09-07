@@ -298,6 +298,42 @@ test("source content drift is detected even when Git status stays modified", asy
   );
 });
 
+test("source drift invalidates a durable queue and returns the run to planning", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  await writeFile(path.join(root, "README.md"), "# Changed source\n", "utf8");
+  invoke(root, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/quickstart.md" },
+  });
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(state.phase, "planning");
+  assert.equal(state.plan, undefined);
+  const resume = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Resume documentation.",
+  });
+  assert.match(resume.hookSpecificOutput.additionalContext, /semantic plan/u);
+});
+
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "less-openwiki-hook-"));
   t.after(() => rm(root, { recursive: true, force: true }));
