@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 export const WIKI = "openwiki";
+const GENERATED_ROOT_SETUP_FILES = new Set(["AGENTS.md", "CLAUDE.md"]);
 
 export function hash(value) {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -272,6 +273,7 @@ function visibleSourcePath(file, ignore) {
     file === ".openwikiignore" ||
     (file !== ".git" &&
       !file.startsWith(".git/") &&
+      !GENERATED_ROOT_SETUP_FILES.has(file) &&
       file !== WIKI &&
       !file.startsWith(`${WIKI}/`) &&
       !ignore(file))
@@ -386,6 +388,7 @@ export async function repositoryChangedPaths(root, baseGitHead) {
     .filter(
       (candidate) =>
         candidate &&
+        !GENERATED_ROOT_SETUP_FILES.has(candidate) &&
         candidate !== WIKI &&
         !candidate.startsWith(`${WIKI}/`) &&
         !ignore(candidate),
@@ -416,7 +419,12 @@ async function repositoryFiles(root) {
 async function walk(root, directory) {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (entry.name === ".git" || entry.name === WIKI || entry.isSymbolicLink())
+    if (
+      entry.name === ".git" ||
+      entry.name === WIKI ||
+      GENERATED_ROOT_SETUP_FILES.has(entry.name) ||
+      entry.isSymbolicLink()
+    )
       continue;
     const absolute = path.join(directory, entry.name);
     if (entry.isDirectory()) result.push(...(await walk(root, absolute)));

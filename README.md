@@ -43,7 +43,9 @@ codex plugin add less-openwiki@less-openwiki
 
 Start a new Codex thread, invoke `$openwiki`, or ask Codex to initialize
 or update repository documentation. Review and trust the plugin hooks when
-Codex asks; they keep documentation runs durable across the full lifecycle.
+Codex asks (or inspect them with `/hooks`); they keep documentation runs durable
+across the full lifecycle. A direct repository task starts the run immediately;
+delegated tasks activate it on their first plan write.
 
 ### Claude Code
 
@@ -69,6 +71,8 @@ Resume the interrupted documentation update.
 
 The workflow uses `openwiki/` as its default documentation directory. It
 honors `openwiki/INSTRUCTIONS.md` and `.openwikiignore` when they exist.
+It also refreshes only its marker-owned blocks in root `AGENTS.md` and
+`CLAUDE.md`, preserving all surrounding repository-authored content.
 
 ## Upstream change review
 

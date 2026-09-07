@@ -21,13 +21,13 @@ resumable completion
 
 The hook engine runs at the native lifecycle points supplied by each host:
 
-| Event                                 | Outcome                                                                       |
-| ------------------------------------- | ----------------------------------------------------------------------------- |
-| `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                  |
-| `PreToolUse`                          | Protect lifecycle state and permit only the plan or current page work.        |
-| `PostToolUse`                         | Consume semantic intent, validate, reconcile Claims, and checkpoint progress. |
-| `Stop`                                | Finalize valid queued work; restore skipped snapshots as an interrupted run.  |
-| `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                       |
+| Event                                 | Outcome                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                                              |
+| `PreToolUse`                          | Protect lifecycle state, bootstrap a delegated plan write, and permit only the plan or current page work. |
+| `PostToolUse`                         | Consume semantic intent, validate, reconcile Claims, and checkpoint progress.                             |
+| `Stop`                                | Finalize valid queued work; restore skipped snapshots as an interrupted run.                              |
+| `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                                                   |
 
 The hook adapter is intentionally thin. It invokes three ordinary internal
 modules: lifecycle (state, planning, snapshot, checkpoint and rollback),
@@ -41,6 +41,12 @@ generated documentation page. Durable repository outputs are:
 - `openwiki/.claims/` for page grounding state;
 - `openwiki/.page-manifest.json` for completed-page coverage; and
 - `openwiki/.last-update.json` after completion or interruption.
+
+At the same startup boundary, the runtime maintains upstream-compatible
+`<!-- OPENWIKI:START -->` / `<!-- OPENWIKI:END -->` blocks in root `AGENTS.md`
+and `CLAUDE.md`. It creates either file when missing, replaces only one valid
+existing block, preserves surrounding user content, and refuses to write
+either file when one has malformed or duplicated markers.
 
 The hook package includes its pinned YAML reader, so OKF front matter is
 interpreted consistently on a clean Codex or Claude Code installation without
@@ -137,7 +143,9 @@ new source rather than incorrectly reporting the wiki as current.
 | Claude Code | `.claude-plugin/plugin.json` | `.claude-plugin/marketplace.json`  | `hooks/hooks.json` |
 
 The package uses each host's native hook payload and policy response shape, but
-both call the same engine and write the same repository state.
+both call the same engine and write the same repository state. Codex hooks are
+explicitly declared in its manifest and must be reviewed and trusted in
+`/hooks` before they can run.
 
 ## Upstream maintenance
 

@@ -14,6 +14,7 @@ component that enforces it.
 | Incremental source review                                                           | Source snapshots and per-page Git baselines in `storage.mjs` and `lifecycle.mjs`            | Source-drift, mixed-baseline, staged/unstaged, and docs-only cases     |
 | OKF repair, provenance, verification, sources, links, Mermaid fallback, and indexes | `okf.mjs`                                                                                   | Structured YAML/OKF, provenance, link, Mermaid, and finalization cases |
 | Abandoned page work                                                                 | `{ "action": "skip" }` private page intent, rollback snapshot, and interrupted finalization | Existing-page and newly-planned-page skip cases                        |
+| Root coding-agent guidance                                                          | Marker-owned `AGENTS.md` and `CLAUDE.md` setup performed before a new run                   | Setup, preservation, malformed-marker, and write-ownership cases       |
 | Codex and Claude Code lifecycle integration                                         | Shared hook adapter plus both plugin manifests and marketplaces                             | Native plugin, Codex, and Claude validation commands                   |
 
 ## Native boundary
