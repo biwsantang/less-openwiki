@@ -154,6 +154,7 @@ export function normalizePage(value) {
   const normalized = path.posix.normalize(rooted);
   if (
     !isFactualPage(normalized) ||
+    path.posix.basename(normalized).startsWith("_") ||
     normalized.includes("../") ||
     normalized.startsWith("../")
   ) {

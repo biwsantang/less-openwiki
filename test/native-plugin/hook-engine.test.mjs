@@ -441,6 +441,68 @@ test("an initialization plan cannot delete generated pages", async (t) => {
   );
 });
 
+test("a plan canonicalizes seeds and related pages and rejects reserved pages", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Route readers.",
+        seedPaths: ["/src\\main.ts"],
+        relatedPages: ["architecture.md"],
+      },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const accepted = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.deepEqual(accepted.plan.pages[0].seedPaths, ["src/main.ts"]);
+  assert.deepEqual(accepted.plan.pages[0].relatedPages, [
+    "openwiki/architecture.md",
+  ]);
+
+  const rejectedRoot = await fixture(t);
+  invoke(rejectedRoot, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: rejectedRoot,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(
+    path.join(rejectedRoot, "openwiki", ".intents", "plan.json"),
+    {
+      pages: [
+        {
+          path: "_working.md",
+          title: "Working",
+          purpose: "Reserved page.",
+        },
+        {
+          path: "quickstart.md",
+          title: "Quickstart",
+          purpose: "Route readers.",
+        },
+      ],
+    },
+  );
+  const rejected = invoke(rejectedRoot, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: rejectedRoot,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  assert.match(rejected.systemMessage, /invalid documentation page path/u);
+});
+
 test("an update normalizes an existing page with unusable front matter", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });

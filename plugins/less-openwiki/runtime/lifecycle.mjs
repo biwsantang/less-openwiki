@@ -464,10 +464,14 @@ function planPage(raw) {
     title: raw.title.trim(),
     purpose: raw.purpose.trim(),
     seedPaths: [
-      ...new Set(planStrings(raw.seedPaths ?? [], "seedPaths")),
+      ...new Set(
+        planStrings(raw.seedPaths ?? [], "seedPaths").map(normalizeSeedPath),
+      ),
     ].sort(),
     relatedPages: [
-      ...new Set(planStrings(raw.relatedPages ?? [], "relatedPages")),
+      ...new Set(
+        planStrings(raw.relatedPages ?? [], "relatedPages").map(normalizePage),
+      ),
     ].sort(),
     instructions: [
       ...new Set(planStrings(raw.instructions ?? [], "instructions")),
@@ -483,6 +487,13 @@ function planStrings(value, field) {
   )
     throw new Error(`${field} must be an array of non-empty strings`);
   return value.map((item) => item.trim());
+}
+
+function normalizeSeedPath(value) {
+  const normalized = value.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!normalized || normalized.split("/").includes(".."))
+    throw new Error(`invalid seed path: ${value}`);
+  return normalized;
 }
 
 function addRequiredClaimIssueJobs(pages, pagePaths, deleted, issues) {
