@@ -233,11 +233,8 @@ export async function finish(root) {
       stopReason: `Documentation remains incomplete: ${current.path}.`,
       systemMessage: `Less OpenWiki requires the assigned page before completion. ${pendingSummary(state)}`,
     };
-  const source = await sourceSnapshot(root);
-  if (source.fingerprint !== state.sourceFingerprint)
-    throw new Error(
-      "repository source changed during the documentation run; replan before finalization",
-    );
+  const sourceChangedBeforeFinish =
+    (await sourceSnapshot(root)).fingerprint !== state.sourceFingerprint;
   for (const page of state.plan.deletePages) {
     await rm(path.join(root, page), { force: true });
     await removeClaims(root, page);
@@ -258,19 +255,30 @@ export async function finish(root) {
   for (const file of pages)
     await refreshClaimsPageVersion(root, relative(root, file));
   await replaceManifest(root, pages, state);
+  const sourceChanged =
+    sourceChangedBeforeFinish ||
+    (await sourceSnapshot(root)).fingerprint !== state.sourceFingerprint;
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),
     command: state.mode,
-    ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
+    ...(sourceChanged
+      ? state.baseGitHead
+        ? { gitHead: state.baseGitHead }
+        : {}
+      : state.targetGitHead
+        ? { gitHead: state.targetGitHead }
+        : {}),
     model: state.actor.metadataModel,
-    status: "complete",
+    status: sourceChanged ? "interrupted" : "complete",
     language: state.language,
   });
   await rm(runPath(root), { force: true });
   await rm(rollbackRoot(root, state.runId), { recursive: true, force: true });
   await rm(intentRoot(root), { recursive: true, force: true });
   return {
-    systemMessage: "Less OpenWiki documentation run is complete and validated.",
+    systemMessage: sourceChanged
+      ? "Less OpenWiki documentation run is finalized, but repository source changed during the run. Run an update to reconcile it."
+      : "Less OpenWiki documentation run is complete and validated.",
   };
 }
 

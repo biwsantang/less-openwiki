@@ -17,6 +17,7 @@ import {
   reconcileClaims,
 } from "../../plugins/less-openwiki/runtime/claims.mjs";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
+import { finish } from "../../plugins/less-openwiki/runtime/lifecycle.mjs";
 import { finalizeGeneratedProvenance } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
   hash,
@@ -926,6 +927,64 @@ test("an explicit language request bypasses a clean native update no-op", async 
     JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
       .phase,
     "planning",
+  );
+});
+
+test("finalization preserves completed documentation when source drifts", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  await writeIntent(root, "openwiki/quickstart.md", "README.md");
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/quickstart.md" },
+  });
+  const plannedSource = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  ).sourceFingerprint;
+  await mkdir(path.join(root, "src"), { recursive: true });
+  await writeFile(
+    path.join(root, "src", "changed-after-planning.ts"),
+    "export const changed = true;\n",
+    "utf8",
+  );
+
+  const result = await finish(root);
+
+  assert.match(result.systemMessage, /changed during the run/u);
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  const update = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".last-update.json"), "utf8"),
+  );
+  assert.equal(update.status, "interrupted");
+  assert.equal(update.gitHead, undefined);
+  const manifest = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".page-manifest.json"), "utf8"),
+  );
+  assert.equal(
+    manifest.pages["/openwiki/quickstart.md"].sourceFingerprint,
+    plannedSource,
   );
 });
 
