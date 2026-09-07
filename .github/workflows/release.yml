@@ -28,6 +28,7 @@ jobs:
         run: |
           pnpm plugin:validate
           pnpm plugin:test
+          pnpm format:check
 
       - name: Publish release summary
         run: |
