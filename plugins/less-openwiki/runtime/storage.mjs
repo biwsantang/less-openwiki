@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
   lstat,
   mkdir,
+  open,
   readFile,
   readlink,
   readdir,
@@ -275,7 +277,7 @@ async function updateFingerprintSourceEntry(digest, root, file, tracked) {
   updateFingerprintField(digest, "path", file);
   let stats;
   try {
-    stats = await lstat(absolute);
+    stats = await lstat(absolute, { bigint: true });
   } catch (error) {
     if (tracked && error?.code === "ENOENT") {
       updateFingerprintField(digest, "kind", "tracked-missing");
@@ -283,16 +285,22 @@ async function updateFingerprintSourceEntry(digest, root, file, tracked) {
     }
     throw new Error(`Unable to inspect source path ${file}.`, { cause: error });
   }
+  if (stats.isFile()) {
+    const opened = await readFingerprintRegularFile(absolute, file, stats);
+    updateFingerprintField(
+      digest,
+      "executable",
+      opened.executable ? "yes" : "no",
+    );
+    updateFingerprintField(digest, "kind", "file");
+    updateFingerprintField(digest, "bytes", opened.bytes);
+    return;
+  }
   updateFingerprintField(
     digest,
     "executable",
-    stats.mode & 0o111 ? "yes" : "no",
+    stats.mode & 0o111n ? "yes" : "no",
   );
-  if (stats.isFile()) {
-    updateFingerprintField(digest, "kind", "file");
-    updateFingerprintField(digest, "bytes", await readFile(absolute));
-    return;
-  }
   if (stats.isSymbolicLink()) {
     updateFingerprintField(digest, "kind", "symlink");
     updateFingerprintField(
@@ -307,6 +315,38 @@ async function updateFingerprintSourceEntry(digest, root, file, tracked) {
     return;
   }
   throw new Error(`Unsupported source entry type at ${file}.`);
+}
+
+async function readFingerprintRegularFile(absolute, file, inspected) {
+  let handle;
+  try {
+    handle = await open(
+      absolute,
+      fsConstants.O_RDONLY |
+        (typeof fsConstants.O_NOFOLLOW === "number"
+          ? fsConstants.O_NOFOLLOW
+          : 0),
+    );
+  } catch (error) {
+    throw new Error(`Unable to safely open source path ${file}.`, {
+      cause: error,
+    });
+  }
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (
+      !opened.isFile() ||
+      opened.dev !== inspected.dev ||
+      opened.ino !== inspected.ino
+    )
+      throw new Error(`Source path changed while fingerprinting ${file}.`);
+    return {
+      bytes: await handle.readFile(),
+      executable: (opened.mode & 0o111n) !== 0n,
+    };
+  } finally {
+    await handle.close();
+  }
 }
 
 function updateFingerprintField(digest, label, value) {
