@@ -375,6 +375,8 @@ async function acceptPlan(root, state) {
       throw new Error("plan language must be a non-empty BCP-47 string");
     state.language = resolveLanguage(intent.language);
   }
+  if (state.mode === "init" && deletePages.length > 0)
+    throw new Error("initialization plans cannot delete generated pages");
   state.languageChanged = Boolean(
     state.previousLastUpdate?.language &&
     primaryLanguage(state.previousLastUpdate.language) !==
