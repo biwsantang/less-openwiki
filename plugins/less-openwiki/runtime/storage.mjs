@@ -388,27 +388,77 @@ async function loadIgnore(root) {
   }
   const rules = lines
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
+    .filter((line) => line && !line.startsWith("#"))
+    .map(compileIgnoreRule)
+    .filter(Boolean);
   return (candidate) => {
+    const normalized = normalizeIgnorePath(candidate);
+    if (!normalized) return false;
     let ignored = false;
     for (let rule of rules) {
-      const negated = rule.startsWith("!");
-      if (negated) rule = rule.slice(1);
-      rule = rule.replace(/^\.\//u, "").replace(/^\/+|\/+$/gu, "");
-      const expression =
-        "^" +
-        rule
-          .split("**")
-          .map((part) => part.split("*").map(escape).join("[^/]*"))
-          .join(".*") +
-        "(?:/.*)?$";
-      const matches = rule.includes("/")
-        ? new RegExp(expression, "iu").test(candidate)
-        : new RegExp(`(^|/)${expression.slice(1)}`, "iu").test(candidate);
-      if (matches) ignored = !negated;
+      if (rule.matches(normalized, false)) ignored = !rule.negated;
     }
     return ignored;
   };
+}
+
+function compileIgnoreRule(pattern) {
+  let normalized = pattern.replace(/\\/gu, "/");
+  const negated = normalized.startsWith("!");
+  if (negated) normalized = normalized.slice(1);
+  normalized = normalized.replace(/^\.\/+/u, "").replace(/\/+/gu, "/");
+  const anchored = normalized.startsWith("/");
+  const directoryOnly = normalized.endsWith("/");
+  normalized = normalized.replace(/^\/+|\/+$/gu, "");
+  if (!normalized) return null;
+  const source = globToRegexSource(normalized);
+  const matcher =
+    anchored || normalized.includes("/")
+      ? new RegExp(`^${source}(?:/.*)?$`, "iu")
+      : new RegExp(`(^|/)${source}(/.*)?$`, "iu");
+  return {
+    negated,
+    matches(candidate, isDirectory) {
+      return (
+        matcher.test(candidate) &&
+        (!directoryOnly || isDirectory || candidate.includes("/"))
+      );
+    },
+  };
+}
+
+function globToRegexSource(pattern) {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    const next = pattern[index + 1];
+    if (character === "*" && next === "*") {
+      if (pattern[index + 2] === "/") {
+        source += "(?:.*/)?";
+        index += 2;
+      } else {
+        source += ".*";
+        index += 1;
+      }
+      continue;
+    }
+    if (character === "*") {
+      source += "[^/]*";
+      continue;
+    }
+    if (character === "?") {
+      source += "[^/]";
+      continue;
+    }
+    source += escape(character);
+  }
+  return source;
+}
+
+function normalizeIgnorePath(value) {
+  const slashed = value.replace(/\\/gu, "/");
+  const normalized = path.posix.normalize(`/${slashed.replace(/^\/+/u, "")}`);
+  return normalized.replace(/^\/+/u, "").replace(/\/+$/u, "");
 }
 
 function escape(value) {

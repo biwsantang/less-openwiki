@@ -644,6 +644,39 @@ test("the update window contains visible committed and untracked source paths", 
   ]);
 });
 
+test("the update window honors upstream .openwikiignore glob and directory semantics", async (t) => {
+  const root = await fixture(t);
+  await writeFile(
+    path.join(root, ".openwikiignore"),
+    "/root-only\n**/generated/\n*.log\n!logs/keep.log\ncache?\n",
+    "utf8",
+  );
+  for (const [file, contents] of [
+    ["root-only", "hidden\n"],
+    ["nested/root-only", "visible\n"],
+    ["generated/output.js", "hidden\n"],
+    ["nested/generated/output.js", "hidden\n"],
+    ["build", "visible\n"],
+    ["logs/debug.log", "hidden\n"],
+    ["logs/keep.log", "visible\n"],
+    ["cache1", "hidden\n"],
+    ["nested/cache2", "hidden\n"],
+    ["cache12", "visible\n"],
+  ]) {
+    const absolute = path.join(root, file);
+    await mkdir(path.dirname(absolute), { recursive: true });
+    await writeFile(absolute, contents, "utf8");
+  }
+  assert.deepEqual(await repositoryChangedPaths(root, null), [
+    ".openwikiignore",
+    "README.md",
+    "build",
+    "cache12",
+    "logs/keep.log",
+    "nested/root-only",
+  ]);
+});
+
 test("an update is a no-op only with no visible source changes and no Claims debt", async (t) => {
   const root = await fixture(t);
   execFileSync("git", ["config", "user.email", "fixture@example.com"], {
