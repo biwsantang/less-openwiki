@@ -411,6 +411,24 @@ test("OKF migration falls back cleanly when front matter is structurally malform
   );
 });
 
+test("OKF migration repairs malformed standard metadata families", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "metadata.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Existing\ntags: [ok, 2]\ngenerated: nope\nverified: { by: human, at: nope }\nsources: [bad]\nstatus: broken\nstale_after: nope\nauthor: Ada\n---\n# Existing\n",
+    "utf8",
+  );
+
+  await normalizeWikiOkf(root);
+
+  assert.equal(
+    await readFile(page, "utf8"),
+    "---\ntype: concept\ntitle: Existing\ntags:\n  - ok\nauthor: Ada\n---\n# Existing\n",
+  );
+});
+
 test("generated provenance preserves an untouched page's prior producer event", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });

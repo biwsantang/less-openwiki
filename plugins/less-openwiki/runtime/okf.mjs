@@ -46,6 +46,27 @@ function repairOkfFrontmatter(content, file, conceptType) {
     const field = fields.get(name);
     if (field && !isNonEmptyYamlString(field)) replacements.set(name, []);
   }
+  const tags = fields.get("tags");
+  if (tags) {
+    const repaired = repairTags(tags);
+    if (repaired) replacements.set("tags", repaired);
+  }
+  for (const name of ["generated", "verified"]) {
+    const field = fields.get(name);
+    if (field && !isValidActorEvents(field, name === "verified"))
+      replacements.set(name, []);
+  }
+  const sources = fields.get("sources");
+  if (sources && !hasUsableSources(sources)) replacements.set("sources", []);
+  const status = fields.get("status");
+  if (
+    status &&
+    !["draft", "stable", "deprecated"].includes(status.value.trim())
+  )
+    replacements.set("status", []);
+  const staleAfter = fields.get("stale_after");
+  if (staleAfter && !isIsoDateTime(staleAfter.value.trim()))
+    replacements.set("stale_after", []);
   if (replacements.size === 0) return content;
   const frontmatter = rewriteFrontmatter(match[1], fields, replacements);
   return `${content.slice(0, match.index)}---\n${frontmatter}\n---\n${body}`;
@@ -96,6 +117,97 @@ function isNonEmptyYamlString(field) {
   if (/^[+-]?(?:\d|\.\d)/u.test(raw)) return false;
   const quote = /^(["'])(.*)\1\s*$/u.exec(raw);
   return quote ? Boolean(quote[2].trim()) : !/^['"]/u.test(raw);
+}
+
+function repairTags(field) {
+  const raw = field.value.trim();
+  const candidates = raw
+    ? raw.startsWith("[") && raw.endsWith("]")
+      ? raw.slice(1, -1).split(",")
+      : []
+    : field.lines
+        .slice(field.start + 1, field.end)
+        .map((line) => /^\s*-\s*(.*?)\s*$/u.exec(line)?.[1] ?? "");
+  const tags = candidates
+    .map((value) => value.trim())
+    .filter((value) => isInlineYamlString(value));
+  return tags.length ? ["tags:", ...tags.map((tag) => `  - ${tag}`)] : [];
+}
+
+function isInlineYamlString(value) {
+  if (!value || /^(?:null|~|true|false|[\[{]|-|&|\*|!)/iu.test(value))
+    return false;
+  if (/^[+-]?(?:\d|\.\d)/u.test(value)) return false;
+  const quote = /^(["'])(.*)\1\s*$/u.exec(value);
+  return quote ? Boolean(quote[2].trim()) : !/^['"]/u.test(value);
+}
+
+function isValidActorEvents(field, allowList) {
+  const raw = field.value.trim();
+  if (raw.startsWith("{")) return isActorEvent(raw);
+  const lines = field.lines.slice(field.start + 1, field.end);
+  if (!raw && lines.length) {
+    const events = allowList ? splitActorEvents(lines) : [lines];
+    return (
+      events.length > 0 && events.every((event) => isActorEventLines(event))
+    );
+  }
+  return false;
+}
+
+function splitActorEvents(lines) {
+  const events = [];
+  let current = [];
+  for (const line of lines) {
+    if (/^\s*-\s*by:/u.test(line) && current.length) {
+      events.push(current);
+      current = [];
+    }
+    current.push(line);
+  }
+  if (current.length) events.push(current);
+  return events;
+}
+
+function isActorEvent(value) {
+  const fields = new Map(
+    value
+      .replace(/^\{\s*|\s*\}$/gu, "")
+      .split(",")
+      .map((entry) => entry.split(/:\s*/u, 2).map((part) => part.trim())),
+  );
+  return (
+    isInlineYamlString(fields.get("by") ?? "") &&
+    (!fields.has("at") || isIsoDateTime(unquote(fields.get("at"))))
+  );
+}
+
+function isActorEventLines(lines) {
+  const values = new Map();
+  for (const line of lines) {
+    const match = /^\s*(?:-\s*)?(by|at):\s*(.*?)\s*$/u.exec(line);
+    if (match) values.set(match[1], match[2]);
+  }
+  return (
+    isInlineYamlString(values.get("by") ?? "") &&
+    (!values.has("at") || isIsoDateTime(unquote(values.get("at"))))
+  );
+}
+
+function hasUsableSources(field) {
+  const raw = field.value.trim();
+  if (!raw.startsWith("[")) return true;
+  return /(?:^|[,{\s])resource\s*:/u.test(raw);
+}
+
+function unquote(value) {
+  return /^(["'])(.*)\1$/u.exec(value ?? "")?.[2] ?? value;
+}
+
+function isIsoDateTime(value) {
+  return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/u.test(
+    value,
+  );
 }
 
 function rewriteFrontmatter(frontmatter, fields, replacements) {
