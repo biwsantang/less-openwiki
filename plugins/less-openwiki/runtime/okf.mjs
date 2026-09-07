@@ -442,7 +442,7 @@ function bodyHash(content) {
   return hash(content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/u, ""));
 }
 
-function readGenerated(content) {
+export function readGeneratedEvent(content) {
   const value = yamlFrontmatter(content)?.generated;
   if (
     !value ||
@@ -469,7 +469,7 @@ function setGenerated(content, actor, at) {
 }
 
 function restoreGenerated(content, previous) {
-  const current = readGenerated(content);
+  const current = readGeneratedEvent(content);
   if (current?.by === previous?.by && current?.at === previous?.at)
     return content;
   if (!previous) return replaceFrontmatterField(content, "generated", []);

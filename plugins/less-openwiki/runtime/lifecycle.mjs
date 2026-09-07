@@ -36,6 +36,7 @@ import {
   finalizeWiki,
   normalizePageOkf,
   normalizeWikiOkf,
+  readGeneratedEvent,
   validateOkfFrontmatter,
 } from "./okf.mjs";
 
@@ -797,15 +798,11 @@ async function provenanceSnapshot(root) {
   return Promise.all(
     pages.map(async (file) => {
       const content = await readFile(file, "utf8");
-      const generated = /^generated:\n((?:^[ \t].*(?:\n|$))*)/mu.exec(
-        /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1] ?? "",
-      )?.[1];
-      const by = /^\s*by:\s*(\S.*?)\s*$/mu.exec(generated ?? "")?.[1]?.trim();
-      const at = /^\s*at:\s*(\S.*?)\s*$/mu.exec(generated ?? "")?.[1]?.trim();
+      const generated = readGeneratedEvent(content);
       return {
         page: `/${relative(root, file)}`,
         bodyHash: hash(content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/u, "")),
-        ...(by ? { generated: { by, ...(at ? { at } : {}) } } : {}),
+        ...(generated ? { generated } : {}),
       };
     }),
   );

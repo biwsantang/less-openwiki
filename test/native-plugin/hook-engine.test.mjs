@@ -726,6 +726,30 @@ test("generated provenance recognizes a YAML flow event", async (t) => {
   );
 });
 
+test("an update snapshots YAML flow provenance before page work", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "existing.md"),
+    "---\ntype: concept\ntitle: Existing\ngenerated: { by: example/1.0, at: 2025-01-01T00:00:00.000Z }\n---\n\n# Existing\n",
+    "utf8",
+  );
+
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.deepEqual(state.preparedWiki.generatedProvenance[0].generated, {
+    by: "example/1.0",
+    at: "2025-01-01T00:00:00.000Z",
+  });
+});
+
 test("an update plan adds omitted work for stale Claims", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
