@@ -590,6 +590,32 @@ test("generated provenance preserves an untouched page's prior producer event", 
   );
 });
 
+test("generated provenance recognizes a YAML flow event", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const original =
+    "---\ntype: concept\ngenerated: { by: example/1.0, at: 2025-01-01T00:00:00.000Z }\n---\n\n# Existing\n";
+  await writeFile(path.join(root, "openwiki", "existing.md"), original, "utf8");
+  await finalizeGeneratedProvenance(root, {
+    startedAt: "2026-01-01T00:00:00.000Z",
+    actor: { producerActor: "openwiki/0.5.0" },
+    plan: { pages: [] },
+    preparedWiki: {
+      generatedProvenance: [
+        {
+          page: "/openwiki/existing.md",
+          bodyHash: hash("\n# Existing\n"),
+          generated: { by: "example/1.0", at: "2025-01-01T00:00:00.000Z" },
+        },
+      ],
+    },
+  });
+  assert.equal(
+    await readFile(path.join(root, "openwiki", "existing.md"), "utf8"),
+    original,
+  );
+});
+
 test("an update plan adds omitted work for stale Claims", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
@@ -1042,6 +1068,7 @@ test("Claims source projection preserves YAML flow mappings", async (t) => {
   assert.match(content, /resource: repo:\/\/AUTHORED\.md/u);
   assert.match(content, /owner: human/u);
   assert.match(content, /resource: repo:\/\/README\.md/u);
+  assert.equal((content.match(/^sources:/gmu) ?? []).length, 1);
 });
 
 test("an update is a no-op only with no visible source changes and no Claims debt", async (t) => {

@@ -183,6 +183,47 @@ function renderStructuredList(key, values) {
   ];
 }
 
+function renderStructuredValue(key, value) {
+  return stringify({ [key]: value }, { lineWidth: 0 })
+    .trimEnd()
+    .split("\n");
+}
+
+function yamlFrontmatter(content) {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1];
+  if (!frontmatter) return undefined;
+  try {
+    const parsed = parse(`\n${frontmatter}`, {
+      maxAliasCount: 100,
+      schema: "core",
+      uniqueKeys: true,
+    });
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function verificationEvents(value) {
+  const candidates = Array.isArray(value)
+    ? value
+    : value === undefined
+      ? []
+      : [value];
+  return candidates.filter(
+    (event) =>
+      event &&
+      typeof event === "object" &&
+      !Array.isArray(event) &&
+      typeof event.by === "string" &&
+      event.by.trim() &&
+      (event.at === undefined ||
+        (typeof event.at === "string" && event.at.trim())),
+  );
+}
+
 function isIsoDateTime(value) {
   return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/u.test(
     value,
@@ -297,24 +338,28 @@ function bodyHash(content) {
 }
 
 function readGenerated(content) {
-  const block = /^generated:\n((?:^[ \t].*(?:\n|$))*)/mu.exec(
-    /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1] ?? "",
-  )?.[1];
-  const by = /^\s*by:\s*(\S.*?)\s*$/mu.exec(block ?? "")?.[1]?.trim();
-  const at = /^\s*at:\s*(\S.*?)\s*$/mu.exec(block ?? "")?.[1]?.trim();
-  return by ? { by, ...(at ? { at } : {}) } : undefined;
+  const value = yamlFrontmatter(content)?.generated;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof value.by !== "string" ||
+    !value.by.trim() ||
+    (value.at !== undefined &&
+      (typeof value.at !== "string" || !value.at.trim()))
+  )
+    return undefined;
+  return { by: value.by, ...(value.at ? { at: value.at } : {}) };
 }
 
 function setGenerated(content, actor, at) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
-  if (!match) return content;
-  const clean = match[1]
-    .replace(/^generated:\n(?:^[ \t].*(?:\n|$))*/mu, "")
-    .replace(/^timestamp:\s*.*\n?/mu, "")
-    .trimEnd();
-  return content.replace(
-    /^---\r?\n([\s\S]*?)\r?\n---/u,
-    `---\n${clean}\ngenerated:\n  by: ${actor}${at ? `\n  at: ${at}` : ""}\n---`,
+  return replaceFrontmatterField(
+    replaceFrontmatterField(content, "timestamp", []),
+    "generated",
+    renderStructuredValue("generated", {
+      by: actor,
+      ...(at ? { at } : {}),
+    }),
   );
 }
 
@@ -322,55 +367,17 @@ function restoreGenerated(content, previous) {
   const current = readGenerated(content);
   if (current?.by === previous?.by && current?.at === previous?.at)
     return content;
-  if (!previous) {
-    const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
-    if (!match) return content;
-    return content.replace(
-      /^---\r?\n([\s\S]*?)\r?\n---/u,
-      `---\n${match[1].replace(/^generated:\n(?:^[ \t].*(?:\n|$))*/mu, "").trimEnd()}\n---`,
-    );
-  }
+  if (!previous) return replaceFrontmatterField(content, "generated", []);
   return setGenerated(content, previous.by, previous.at ?? "");
 }
 
 function synchronizeVerification(content, actor, at) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
-  if (!match) return content;
-  const retained = [];
-  const inline =
-    /^verified:\s*\{\s*by:\s*([^,}]+)(?:,\s*at:\s*([^}]+))?\s*\}\s*$/mu.exec(
-      match[1],
-    );
-  const verified = /^verified:\n((?:^[ \t].*(?:\n|$))*)/mu.exec(match[1]);
-  if (inline && !inline[1].trim().startsWith("openwiki/")) {
-    retained.push(`  - by: ${inline[1].trim()}`);
-    if (inline[2]?.trim()) retained.push(`    at: ${inline[2].trim()}`);
-  } else if (verified) {
-    const entries = verified[1].split(/\r?\n/u);
-    let event = [];
-    const flush = () => {
-      if (
-        event.length &&
-        !event.some((line) => /^\s*(?:-\s*)?by:\s*openwiki\//u.test(line))
-      )
-        retained.push(...event);
-      event = [];
-    };
-    for (const line of entries) {
-      if (/^\s*-\s*by:/u.test(line) && event.length) flush();
-      if (line.trim()) event.push(line);
-    }
-    flush();
-  }
-  const clean = match[1]
-    .replace(/^verified:\s*\{[^\n]*\}\s*\n?/mu, "")
-    .replace(/^verified:\n(?:^[ \t].*(?:\n|$))*/mu, "")
-    .trimEnd();
-  const existing = retained.length ? `${retained.join("\n")}\n` : "";
-  const block = `verified:\n${existing}  - by: ${actor}\n    at: ${at}\n`;
-  return content.replace(
-    /^---\r?\n([\s\S]*?)\r?\n---/u,
-    `---\n${clean}\n${block}---`,
+  const events = verificationEvents(yamlFrontmatter(content)?.verified);
+  const retained = events.filter(({ by }) => !by.startsWith("openwiki/"));
+  return replaceFrontmatterField(
+    content,
+    "verified",
+    renderStructuredList("verified", [...retained, { by: actor, at }]),
   );
 }
 
@@ -790,7 +797,7 @@ function replaceFrontmatterField(content, key, replacement) {
   if (!match) return content;
   const lines = match[1].split(/\r?\n/u);
   const start = lines.findIndex((line) =>
-    new RegExp(`^${key}:\\s*(?:#.*)?$`, "u").test(line),
+    new RegExp(`^${key}:`, "u").test(line),
   );
   const next = [...lines];
   if (start === -1) next.push(...replacement);
