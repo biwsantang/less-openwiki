@@ -186,6 +186,35 @@ export async function sourceSnapshot(root) {
   };
 }
 
+/** Returns the upstream planner's visible changed-source window, best effort. */
+export async function repositoryChangedPaths(root, baseGitHead) {
+  const ignore = await loadIgnore(root);
+  const paths = new Set();
+  if (baseGitHead)
+    addGitLines(
+      paths,
+      git(root, ["diff", "--name-only", `${baseGitHead}..HEAD`]),
+    );
+  addGitLines(paths, git(root, ["diff", "--name-only", "HEAD"]));
+  addGitLines(paths, git(root, ["ls-files", "--others", "--exclude-standard"]));
+  return [...paths]
+    .filter(
+      (candidate) =>
+        candidate &&
+        candidate !== WIKI &&
+        !candidate.startsWith(`${WIKI}/`) &&
+        !ignore(candidate),
+    )
+    .sort();
+}
+
+function addGitLines(target, output) {
+  for (const line of (output ?? "").split("\n")) {
+    const normalized = line.trim().replace(/\\/gu, "/");
+    if (normalized) target.add(normalized);
+  }
+}
+
 async function repositoryFiles(root) {
   const tracked = git(root, [
     "ls-files",

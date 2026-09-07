@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
+import { repositoryChangedPaths } from "../../plugins/less-openwiki/runtime/storage.mjs";
 
 const engine = path.resolve(
   "plugins/less-openwiki/hooks/less-openwiki-hook.mjs",
@@ -173,6 +174,39 @@ test("a changed documentation language requires every existing factual page to b
     tool_input: { file_path: "openwiki/.intents/plan.json" },
   });
   assert.match(rejected.systemMessage, /language change requires/u);
+});
+
+test("the update window contains visible committed and untracked source paths", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  execFileSync("git", ["add", "README.md"], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], { cwd: root });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeFile(
+    path.join(root, "committed.ts"),
+    "export const committed = true;\n",
+    "utf8",
+  );
+  execFileSync("git", ["add", "committed.ts"], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "source"], { cwd: root });
+  await writeFile(
+    path.join(root, "untracked.ts"),
+    "export const untracked = true;\n",
+    "utf8",
+  );
+  await writeFile(path.join(root, ".openwikiignore"), "ignored.ts\n", "utf8");
+  await writeFile(path.join(root, "ignored.ts"), "secret\n", "utf8");
+  assert.deepEqual(await repositoryChangedPaths(root, base), [
+    ".openwikiignore",
+    "committed.ts",
+    "untracked.ts",
+  ]);
 });
 
 test("source content drift is detected even when Git status stays modified", async (t) => {

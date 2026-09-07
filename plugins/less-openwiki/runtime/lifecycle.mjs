@@ -14,6 +14,7 @@ import {
   pageIntentPath,
   planIntentPath,
   relative,
+  repositoryChangedPaths,
   rollbackRoot,
   runPath,
   sourceSnapshot,
@@ -42,6 +43,7 @@ export async function startOrResume(root, input) {
   const mode = existingPages.length === 0 ? "init" : "update";
   const source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
+  const changedPaths = await repositoryChangedPaths(root, lastUpdate?.gitHead);
   if (
     mode === "update" &&
     lastUpdate?.status === "complete" &&
@@ -75,7 +77,7 @@ export async function startOrResume(root, input) {
   await mkdir(path.join(root, "openwiki"), { recursive: true });
   await writeRun(root, state);
   return context(
-    `Documentation run ${state.runId} started. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
+    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
   );
 }
 
