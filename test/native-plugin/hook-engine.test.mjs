@@ -295,7 +295,7 @@ test("a changed documentation language adds every omitted factual page to the pl
   invoke(root, "user-prompt", {
     hook_event_name: "UserPromptSubmit",
     cwd: root,
-    prompt: "Update the documentation.",
+    prompt: "Update the documentation in English.",
   });
   await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
     language: "fr",
@@ -774,6 +774,49 @@ test("an update snapshots YAML flow provenance before page work", async (t) => {
     by: "example/1.0",
     at: "2025-01-01T00:00:00.000Z",
   });
+});
+
+test("an interrupted native run retains its prior successful Git baseline", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "existing.md"),
+    "---\ntype: concept\ntitle: Existing\n---\n\n# Existing\n",
+    "utf8",
+  );
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: root,
+  });
+  const baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    command: "update",
+    gitHead: baseline,
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en",
+  });
+
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  invoke(root, "session-end", { hook_event_name: "SessionEnd", cwd: root });
+
+  const interrupted = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".last-update.json"), "utf8"),
+  );
+  assert.equal(interrupted.status, "interrupted");
+  assert.equal(interrupted.gitHead, baseline);
 });
 
 test("an update plan adds omitted work for stale Claims", async (t) => {

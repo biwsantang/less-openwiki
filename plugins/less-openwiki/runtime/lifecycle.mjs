@@ -111,6 +111,14 @@ export async function startOrResume(root, input) {
   };
   await mkdir(path.join(root, "openwiki"), { recursive: true });
   await writeRun(root, state);
+  await writeJson(lastUpdatePath(root), {
+    updatedAt: now(),
+    command: state.mode,
+    ...(state.baseGitHead ? { gitHead: state.baseGitHead } : {}),
+    model: state.actor.metadataModel,
+    status: "interrupted",
+    language: state.language,
+  });
   return context(
     `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
   );
@@ -313,7 +321,7 @@ export async function interrupt(root) {
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),
     command: state.mode,
-    ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
+    ...(state.baseGitHead ? { gitHead: state.baseGitHead } : {}),
     model: state.actor.metadataModel,
     status: "interrupted",
     language: state.language,
