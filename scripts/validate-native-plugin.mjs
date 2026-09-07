@@ -55,6 +55,18 @@ assert(
   claudeManifest.version === "0.2.0",
   "Claude manifest version must be 0.2.0.",
 );
+for (const [host, manifest] of [
+  ["Codex", codexManifest],
+  ["Claude", claudeManifest],
+]) {
+  assert(
+    manifest.mcp === undefined &&
+      manifest.mcpServers === undefined &&
+      manifest.commands === undefined &&
+      manifest.bin === undefined,
+    `${host} manifest must expose the native skill and hooks without a public CLI or MCP transport.`,
+  );
+}
 assert(
   identity.OPENWIKI_PRODUCER_ACTOR === `openwiki/${codexManifest.version}` &&
     codexManifest.version === claudeManifest.version,
