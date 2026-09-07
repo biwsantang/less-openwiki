@@ -26,6 +26,74 @@ export async function normalizePageOkf(root, page, language = "en") {
   if (content !== original) await writeFile(file, content, "utf8");
 }
 
+/** Validates the complete supported OKF front-matter contract. */
+export function validateOkfFrontmatter(content) {
+  const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content);
+  if (!block) return { ok: false, errors: ["missing YAML front matter"] };
+  let fields;
+  try {
+    fields = parse(`\n${block[1]}`, {
+      maxAliasCount: 100,
+      schema: "core",
+      uniqueKeys: true,
+    });
+  } catch {
+    return { ok: false, errors: ["invalid YAML front matter"] };
+  }
+  if (!fields || typeof fields !== "object" || Array.isArray(fields))
+    return { ok: false, errors: ["YAML front matter must be a mapping"] };
+  const errors = [];
+  if (!Object.hasOwn(fields, "type"))
+    errors.push("missing 'type' front matter");
+  for (const key of ["type", "title", "description", "resource", "timestamp"])
+    if (
+      Object.hasOwn(fields, key) &&
+      (typeof fields[key] !== "string" || !fields[key].trim())
+    )
+      errors.push(`invalid '${key}' front matter`);
+  if (
+    Object.hasOwn(fields, "tags") &&
+    (!Array.isArray(fields.tags) ||
+      fields.tags.some((tag) => typeof tag !== "string" || !tag.trim()))
+  )
+    errors.push("invalid 'tags' front matter");
+  if (Object.hasOwn(fields, "generated") && !isActorEvent(fields.generated))
+    errors.push("invalid 'generated' front matter");
+  if (Object.hasOwn(fields, "verified")) {
+    const events = Array.isArray(fields.verified)
+      ? fields.verified
+      : [fields.verified];
+    if (!events.every(isActorEvent))
+      errors.push("invalid 'verified' front matter");
+  }
+  if (
+    Object.hasOwn(fields, "sources") &&
+    (!Array.isArray(fields.sources) ||
+      fields.sources.some(
+        (source) =>
+          !source ||
+          typeof source !== "object" ||
+          Array.isArray(source) ||
+          typeof source.resource !== "string" ||
+          !source.resource.trim(),
+      ))
+  )
+    errors.push("invalid 'sources' front matter");
+  if (
+    Object.hasOwn(fields, "status") &&
+    (typeof fields.status !== "string" ||
+      !["draft", "stable", "deprecated"].includes(fields.status))
+  )
+    errors.push("invalid 'status' front matter");
+  if (
+    Object.hasOwn(fields, "stale_after") &&
+    (typeof fields.stale_after !== "string" ||
+      !isIsoDateTime(fields.stale_after))
+  )
+    errors.push("invalid 'stale_after' front matter");
+  return { ok: errors.length === 0, errors };
+}
+
 function repairOkfFrontmatter(content, file, conceptType) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content);
   const body = match ? content.slice(match[0].length) : content;
@@ -161,6 +229,20 @@ function isValidActorEvents(field, allowList) {
   );
 }
 
+function isActorEvent(event) {
+  return (
+    event &&
+    typeof event === "object" &&
+    !Array.isArray(event) &&
+    typeof event.by === "string" &&
+    event.by.trim() &&
+    (event.at === undefined ||
+      (typeof event.at === "string" &&
+        event.at.trim() &&
+        isIsoDateTime(event.at)))
+  );
+}
+
 function validSources(field) {
   if (!Array.isArray(field.parsed)) return [];
   return field.parsed.filter(
@@ -225,8 +307,31 @@ function verificationEvents(value) {
 }
 
 function isIsoDateTime(value) {
-  return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/u.test(
-    value,
+  const match =
+    /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(?:Z|([+-]\d\d):(\d\d))$/u.exec(
+      value,
+    );
+  if (!match) return false;
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] =
+    match.slice(1).map((part) => (part === undefined ? 0 : Number(part)));
+  const days =
+    month === 2
+      ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+        ? 29
+        : 28
+      : [4, 6, 9, 11].includes(month)
+        ? 30
+        : 31;
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59
   );
 }
 

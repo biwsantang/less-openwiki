@@ -24,6 +24,7 @@ import {
   finalizeWiki,
   normalizePageOkf,
   normalizeWikiOkf,
+  validateOkfFrontmatter,
 } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
   hash,
@@ -618,6 +619,21 @@ test("OKF migration repairs malformed standard metadata families", async (t) => 
   assert.equal(
     await readFile(page, "utf8"),
     "---\ntype: concept\ntitle: Existing\ntags:\n  - ok\nauthor: Ada\n---\n# Existing\n",
+  );
+});
+
+test("native OKF validation matches structured upstream metadata requirements", () => {
+  assert.equal(
+    validateOkfFrontmatter(
+      "---\ntype: concept\ntitle: Valid\ngenerated: { by: openwiki/1.0, at: 2026-02-29T00:00:00Z }\n---\n# Valid\n",
+    ).ok,
+    false,
+  );
+  assert.equal(
+    validateOkfFrontmatter(
+      "---\ntype: concept\ntitle: Valid\ngenerated: { by: openwiki/1.0, at: 2024-02-29T00:00:00Z }\nsources: [{ resource: repo://README.md }]\n---\n# Valid\n",
+    ).ok,
+    true,
   );
 });
 

@@ -36,6 +36,7 @@ import {
   finalizeWiki,
   normalizePageOkf,
   normalizeWikiOkf,
+  validateOkfFrontmatter,
 } from "./okf.mjs";
 
 export async function sessionContext(root) {
@@ -835,12 +836,11 @@ async function validatePage(root, page) {
   if (!(await isFile(file)))
     return { ok: false, errors: [`${page} does not exist.`] };
   const content = await readFile(file, "utf8");
-  const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/u);
-  const errors = [];
-  if (!frontmatter) errors.push(`${page} is missing YAML front matter.`);
-  else if (!/^type:\s*\S/mu.test(frontmatter[1]))
-    errors.push(`${page} is missing 'type' front matter.`);
-  return { ok: errors.length === 0, errors };
+  const validation = validateOkfFrontmatter(content);
+  return {
+    ok: validation.ok,
+    errors: validation.errors.map((error) => `${page} ${error}.`),
+  };
 }
 async function stampGenerated(root, page, actor) {
   const file = path.join(root, page);
