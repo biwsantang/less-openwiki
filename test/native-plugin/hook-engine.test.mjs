@@ -218,6 +218,58 @@ test("the update window contains visible committed and untracked source paths", 
   ]);
 });
 
+test("an update is a no-op only with no visible source changes and no Claims debt", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Existing.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], { cwd: root });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    gitHead: head,
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en",
+  });
+  const noop = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  assert.match(noop.hookSpecificOutput.additionalContext, /current/u);
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  await writeFile(path.join(root, "README.md"), "# Changed\n", "utf8");
+  const active = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  assert.match(
+    active.hookSpecificOutput.additionalContext,
+    /Changed source paths: README.md/u,
+  );
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+});
+
 test("source content drift is detected even when Git status stays modified", async (t) => {
   const root = await fixture(t);
   await writeFile(

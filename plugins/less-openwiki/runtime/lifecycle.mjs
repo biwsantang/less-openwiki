@@ -49,11 +49,13 @@ export async function startOrResume(root, input) {
   const source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
   const changedPaths = await repositoryChangedPaths(root, lastUpdate?.gitHead);
+  const claimIssues = mode === "update" ? await preflightClaims(root) : [];
   if (
     mode === "update" &&
     lastUpdate?.status === "complete" &&
     lastUpdate.gitHead &&
-    lastUpdate.gitHead === source.gitHead
+    changedPaths.length === 0 &&
+    claimIssues.length === 0
   )
     return context(
       "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
@@ -82,7 +84,7 @@ export async function startOrResume(root, input) {
   await mkdir(path.join(root, "openwiki"), { recursive: true });
   await writeRun(root, state);
   return context(
-    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
+    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
   );
 }
 
