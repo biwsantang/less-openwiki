@@ -416,6 +416,16 @@ export async function finalizePage(root, page, actor, claims, at) {
   await projectClaimSources(root, page, claims);
 }
 
+/** Reprojects durable Claims evidence into every factual page's OKF sources. */
+export async function synchronizeClaimSources(root) {
+  for (const file of await markdownFiles(path.join(root, "openwiki"))) {
+    const page = relative(root, file);
+    const sidecar = await readClaimsSidecar(root, page);
+    if (!sidecar) continue;
+    await projectClaimSources(root, page, sidecar.claims);
+  }
+}
+
 /** Reconciles generated provenance against the pre-authoring body snapshot. */
 export async function finalizeGeneratedProvenance(root, state) {
   const initial = new Map(
@@ -864,6 +874,22 @@ async function projectClaimSources(root, page, claims) {
   }));
   const next = replaceClaimSources(content, projected);
   if (next !== content) await writeFile(file, next, "utf8");
+}
+
+async function readClaimsSidecar(root, page) {
+  const sidecar = path.join(
+    root,
+    "openwiki",
+    ".claims",
+    page.slice("openwiki/".length).replace(/\.md$/u, ".json"),
+  );
+  try {
+    const value = JSON.parse(await readFile(sidecar, "utf8"));
+    return Array.isArray(value?.claims) ? value : null;
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 /** Replaces only source entries owned by the Claims projection. */

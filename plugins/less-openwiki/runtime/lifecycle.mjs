@@ -37,6 +37,7 @@ import {
   normalizePageOkf,
   normalizeWikiOkf,
   readGeneratedEvent,
+  synchronizeClaimSources,
   validateOkfFrontmatter,
 } from "./okf.mjs";
 
@@ -263,6 +264,7 @@ export async function finish(root) {
       `Claims evidence is stale or unresolved: ${issues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ")}`,
     );
   await finalizeWiki(root, state.language);
+  await synchronizeClaimSources(root);
   await finalizeGeneratedProvenance(root, state);
   for (const file of pages)
     await refreshClaimsPageVersion(root, relative(root, file));

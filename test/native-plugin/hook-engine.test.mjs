@@ -24,6 +24,7 @@ import {
   finalizeWiki,
   normalizePageOkf,
   normalizeWikiOkf,
+  synchronizeClaimSources,
   validateOkfFrontmatter,
 } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
@@ -1228,6 +1229,36 @@ test("Claims source projection preserves YAML flow mappings", async (t) => {
   assert.match(content, /owner: human/u);
   assert.match(content, /resource: repo:\/\/README\.md/u);
   assert.equal((content.match(/^sources:/gmu) ?? []).length, 1);
+});
+
+test("final Claims source projection covers untouched durable pages", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  const page = path.join(root, "openwiki", "existing.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Existing\n---\n\n# Existing\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "existing.json"), {
+    schemaVersion: 1,
+    pageVersion: hash(await readFile(page)),
+    verification: { by: "openwiki/0.5.0", at: "2026-01-01T00:00:00.000Z" },
+    claims: [
+      {
+        id: "claim_existing",
+        statement: "The existing fixture is documented.",
+        evidence: [{ resource: "repo://README.md", version: "fixture" }],
+      },
+    ],
+  });
+
+  await synchronizeClaimSources(root);
+
+  assert.match(
+    await readFile(page, "utf8"),
+    /id: openwiki-source-[a-f0-9]{24}\n    resource: repo:\/\/README\.md/u,
+  );
 });
 
 test("an update is a no-op only with no visible source changes and no Claims debt", async (t) => {
