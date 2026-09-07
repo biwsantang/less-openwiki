@@ -769,7 +769,7 @@ test("Claims source projection preserves authored sources and replaces only nati
   const page = path.join(root, "openwiki", "sources.md");
   await writeFile(
     page,
-    "---\ntype: concept\ntitle: Sources\nsources:\n  - id: authored-source\n    resource: repo://AUTHORED.md\n  - id: openwiki-source-obsolete\n    resource: repo://old.md\n---\n\n# Sources\n",
+    "---\ntype: concept\ntitle: Sources\nsources:\n  - id: authored-source\n    resource: repo://AUTHORED.md\n    author: human:owner\n  - id: openwiki-source-obsolete\n    resource: repo://old.md\n---\n\n# Sources\n",
     "utf8",
   );
 
@@ -784,7 +784,7 @@ test("Claims source projection preserves authored sources and replaces only nati
   const content = await readFile(page, "utf8");
   assert.match(
     content,
-    /id: authored-source\n    resource: repo:\/\/AUTHORED\.md/u,
+    /id: authored-source\n    resource: repo:\/\/AUTHORED\.md\n    author: human:owner/u,
   );
   assert.doesNotMatch(content, /openwiki-source-obsolete/u);
   assert.match(
