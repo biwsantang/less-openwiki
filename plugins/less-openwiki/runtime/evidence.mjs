@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { loadOpenWikiIgnore } from "./storage.mjs";
 
 const RANGE_CONTEXT_LINE_COUNT = 3;
 const LINE_RANGE_VERSION_PREFIX = "repo-lines-v1:sha256:";
@@ -12,6 +13,10 @@ export async function resolveRepositoryEvidence(
   previousVersion,
 ) {
   const parsed = parseResource(resource);
+  if ((await loadOpenWikiIgnore(root))(parsed.path))
+    throw new Error(
+      `Evidence path is excluded by .openwikiignore: ${parsed.path}`,
+    );
   const absolute = path.resolve(root, parsed.path);
   if (!isWithin(root, absolute))
     throw new Error(`Evidence path escapes the repository: ${resource}`);
@@ -64,6 +69,8 @@ function parseResource(value) {
       `Evidence resource contains invalid percent encoding: ${value}`,
     );
   }
+  if (containsControlCharacter(decoded) || containsControlCharacter(fragment))
+    throw new Error(`Evidence resource contains a control character: ${value}`);
   const normalized = path.posix
     .normalize(decoded.replace(/\\/gu, "/"))
     .replace(/^\.\//u, "");
@@ -73,10 +80,10 @@ function parseResource(value) {
     normalized.startsWith("../") ||
     path.posix.isAbsolute(normalized) ||
     /^[a-z]:\//iu.test(normalized) ||
-    normalized === ".git" ||
-    normalized.startsWith(".git/") ||
-    normalized === "openwiki" ||
-    normalized.startsWith("openwiki/")
+    normalized.toLowerCase() === ".git" ||
+    normalized.toLowerCase().startsWith(".git/") ||
+    normalized.toLowerCase() === "openwiki" ||
+    normalized.toLowerCase().startsWith("openwiki/")
   )
     throw new Error(
       `Evidence path must remain inside the repository: ${value}`,
@@ -96,6 +103,13 @@ function parseResource(value) {
   )
     throw new Error(`Evidence line range is invalid: ${value}`);
   return { path: normalized, range: { startLine, endLine } };
+}
+
+function containsControlCharacter(value) {
+  return [...(value ?? "")].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+  });
 }
 
 function formatResource({ path: file, range }) {

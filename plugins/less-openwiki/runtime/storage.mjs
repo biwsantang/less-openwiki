@@ -163,7 +163,7 @@ export function normalizePage(value) {
 }
 
 export async function sourceSnapshot(root) {
-  const ignore = await loadIgnore(root);
+  const ignore = await loadOpenWikiIgnore(root);
   const [head, trackedOutput, untrackedOutput, statusOutput] =
     await Promise.all([
       fingerprintHead(root),
@@ -365,7 +365,7 @@ function compareCodeUnits(left, right) {
 
 /** Returns the upstream planner's visible changed-source window, best effort. */
 export async function repositoryChangedPaths(root, baseGitHead) {
-  const ignore = await loadIgnore(root);
+  const ignore = await loadOpenWikiIgnore(root);
   const paths = new Set();
   if (baseGitHead)
     addGitLines(
@@ -417,7 +417,7 @@ async function walk(root, directory) {
   return result.sort();
 }
 
-async function loadIgnore(root) {
+export async function loadOpenWikiIgnore(root) {
   let lines = [];
   try {
     lines = (await readFile(path.join(root, ".openwikiignore"), "utf8")).split(

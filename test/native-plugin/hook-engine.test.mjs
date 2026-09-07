@@ -198,6 +198,26 @@ test("repository evidence uses upstream V1 whole-file and relocating line-range 
   assert.equal(relocated.content, "selected\n");
 });
 
+test("repository evidence enforces upstream source-boundary rules", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "private"), { recursive: true });
+  await writeFile(path.join(root, "private", "secret.ts"), "secret\n", "utf8");
+  await writeFile(path.join(root, ".openwikiignore"), "private/\n", "utf8");
+
+  await assert.rejects(
+    resolveRepositoryEvidence(root, "repo://private/secret.ts"),
+    /excluded by \.openwikiignore: private\/secret\.ts/u,
+  );
+  await assert.rejects(
+    resolveRepositoryEvidence(root, "repo://source.ts%0A"),
+    /control character/u,
+  );
+  await assert.rejects(
+    resolveRepositoryEvidence(root, "repo://OpenWiki/page.md"),
+    /must remain inside the repository/u,
+  );
+});
+
 test("native prompt detection recognizes an onboarding guide request", async (t) => {
   const root = await fixture(t);
   const result = invoke(root, "user-prompt", {
