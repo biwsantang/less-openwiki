@@ -21,6 +21,8 @@ as the work proceeds.
 - Detects source drift, preserves validated completed pages while marking their
   source checkpoint interrupted for reconciliation, rebuilds indexes, and
   validates pages before completion.
+- Restores a failed page attempt to its pre-run Markdown and Claims snapshot,
+  retaining prior coverage while recording the remaining run as interrupted.
 - Applies the same structured YAML/OKF metadata checks in both supported hosts,
   including provenance, verification, sources, lifecycle status, and timestamps.
 - Keeps a `quickstart.md` routing page and repository agent instructions

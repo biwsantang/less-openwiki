@@ -26,7 +26,7 @@ The hook engine runs at the native lifecycle points supplied by each host:
 | `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                  |
 | `PreToolUse`                          | Protect lifecycle state and permit only the plan or current page work.        |
 | `PostToolUse`                         | Consume semantic intent, validate, reconcile Claims, and checkpoint progress. |
-| `Stop`                                | Finalize only when every queued page is valid; otherwise keep the run active. |
+| `Stop`                                | Finalize valid queued work; restore skipped snapshots as an interrupted run.  |
 | `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                       |
 
 The hook adapter is intentionally thin. It invokes three ordinary internal
