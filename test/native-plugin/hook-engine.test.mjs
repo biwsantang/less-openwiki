@@ -157,7 +157,7 @@ test("repository evidence uses upstream V1 whole-file and relocating line-range 
   assert.equal(relocated.content, "selected\n");
 });
 
-test("a changed documentation language requires every existing factual page to be planned", async (t) => {
+test("a changed documentation language adds every omitted factual page to the plan", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
   await writeFile(
@@ -187,12 +187,64 @@ test("a changed documentation language requires every existing factual page to b
       },
     ],
   });
-  const rejected = invoke(root, "post-tool", {
+  const accepted = invoke(root, "post-tool", {
     hook_event_name: "PostToolUse",
     cwd: root,
     tool_input: { file_path: "openwiki/.intents/plan.json" },
   });
-  assert.match(rejected.systemMessage, /language change requires/u);
+  assert.match(accepted.hookSpecificOutput.additionalContext, /accepted/u);
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.deepEqual(
+    state.plan.pages.map((page) => page.path),
+    ["openwiki/architecture.md", "openwiki/quickstart.md"],
+  );
+});
+
+test("an update plan adds omitted work for stale Claims", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Existing.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion:
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+    claims: [
+      {
+        id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+        statement: "The fixture exists.",
+        evidence: [{ resource: "repo://README.md", version: "stale" }],
+      },
+    ],
+  });
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [],
+  });
+  const accepted = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  assert.match(accepted.hookSpecificOutput.additionalContext, /accepted/u);
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.deepEqual(
+    state.plan.pages.map((page) => page.path),
+    ["openwiki/quickstart.md"],
+  );
+  assert.deepEqual(state.plan.pages[0].seedPaths, ["README.md"]);
 });
 
 test("the update window contains visible committed and untracked source paths", async (t) => {

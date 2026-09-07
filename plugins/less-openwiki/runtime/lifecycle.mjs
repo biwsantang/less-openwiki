@@ -301,8 +301,8 @@ async function reconcileManifestPageJobs(root, state) {
 
 async function acceptPlan(root, state) {
   const intent = await readJson(planIntentPath(root), { required: true });
-  if (!Array.isArray(intent?.pages) || intent.pages.length === 0)
-    throw new Error("plan intent requires a non-empty pages array");
+  if (!Array.isArray(intent?.pages))
+    throw new Error("plan intent requires a pages array");
   const pages = intent.pages.map((raw) => ({
     id: randomUUID(),
     path: normalizePage(String(raw.path ?? "")),
@@ -338,9 +338,21 @@ async function acceptPlan(root, state) {
     throw new Error("quickstart cannot be deleted");
   if (deletePages.some((page) => pages.some((job) => job.path === page)))
     throw new Error("a planned page cannot also be deleted");
-  for (const required of state.requiredRewritePages) {
-    if (!pages.some((page) => `/${page.path}` === required))
-      throw new Error(`language change requires a rewrite job for ${required}`);
+  if (state.mode === "update") {
+    const pagePaths = new Set(pages.map((page) => page.path));
+    const deleted = new Set(deletePages);
+    addRequiredClaimIssueJobs(
+      pages,
+      pagePaths,
+      deleted,
+      await preflightClaims(root),
+    );
+    addRequiredRewriteJobs(
+      pages,
+      pagePaths,
+      deleted,
+      state.requiredRewritePages,
+    );
   }
   pages.sort(
     (left, right) =>
@@ -353,6 +365,75 @@ async function acceptPlan(root, state) {
   await createRollback(root, state);
   await rm(planIntentPath(root), { force: true });
   await writeRun(root, state);
+}
+
+function addRequiredClaimIssueJobs(pages, pagePaths, deleted, issues) {
+  const grouped = new Map();
+  for (const issue of issues) {
+    const page = normalizePage(issue.page);
+    const current = grouped.get(page) ?? [];
+    current.push(issue);
+    grouped.set(page, current);
+  }
+  for (const [page, pageIssues] of grouped) {
+    if (pagePaths.has(page) || deleted.has(page)) continue;
+    pages.push({
+      id: randomUUID(),
+      path: page,
+      title: titleFromPage(page),
+      purpose:
+        "Reconcile stale or unresolved Claims and update this page from current repository evidence while preserving unaffected accurate content.",
+      seedPaths: [
+        ...new Set(
+          pageIssues.flatMap((issue) =>
+            issue.resources.map(evidenceResourceToSeedPath),
+          ),
+        ),
+      ].sort(),
+      relatedPages: [],
+      instructions: [],
+      status: "pending",
+    });
+    pagePaths.add(page);
+  }
+}
+
+function addRequiredRewriteJobs(pages, pagePaths, deleted, requiredPages) {
+  for (const required of requiredPages) {
+    const page = normalizePage(required);
+    if (pagePaths.has(page) || deleted.has(page)) continue;
+    pages.push({
+      id: randomUUID(),
+      path: page,
+      title: titleFromPage(page),
+      purpose:
+        "Rewrite this existing page in the run's target language while preserving every accurate repository-supported fact and reconciling its complete Claim set.",
+      seedPaths: [],
+      relatedPages: [],
+      instructions: [],
+      status: "pending",
+    });
+    pagePaths.add(page);
+  }
+}
+
+function evidenceResourceToSeedPath(resource) {
+  const seed = String(resource ?? "")
+    .replace(/^repo:\/\//u, "")
+    .replace(/#L\d+(?:-L\d+)?$/u, "")
+    .replace(/^\/+|\\/gu, "");
+  if (!seed || seed.split("/").includes(".."))
+    throw new Error(`invalid repository evidence resource: ${resource}`);
+  return seed;
+}
+
+function titleFromPage(page) {
+  return path.posix
+    .basename(page, ".md")
+    .split(/[-_]/u)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join(" ");
 }
 
 async function loadRun(root) {

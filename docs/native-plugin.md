@@ -42,6 +42,8 @@ control surface. Durable repository outputs are:
 
 The skill uses temporary, hook-consumed intent files while a run is active: a
 semantic plan first, then a page-local Claims intent before each factual page.
+For updates, the plan may intentionally omit pages: the lifecycle deterministically
+adds work required to reconcile stale Claims and to complete a language rewrite.
 They are removed at checkpoints and never become documentation output. The
 skill does not edit durable lifecycle files directly.
 
