@@ -21,7 +21,12 @@ import {
   writeJson,
   readJson,
 } from "./storage.mjs";
-import { preflightClaims, reconcileClaims, removeClaims } from "./claims.mjs";
+import {
+  preflightClaims,
+  reconcileClaims,
+  refreshClaimsPageVersion,
+  removeClaims,
+} from "./claims.mjs";
 import { finalizePage, finalizeWiki } from "./okf.mjs";
 
 export async function sessionContext(root) {
@@ -165,6 +170,7 @@ export async function checkpoint(root, input) {
     state.actor.producerActor,
   );
   await finalizePage(root, current.path, state.actor.producerActor, claims);
+  await refreshClaimsPageVersion(root, current.path);
   current.status = "complete";
   current.completedBy = actorFor();
   await rm(pageIntentPath(root, current.path), { force: true });
@@ -639,7 +645,7 @@ function isWikiMarkdown(root, target) {
   );
 }
 function actorFor() {
-  return process.env.CLAUDE_PLUGIN_ROOT ? "claude-code" : "codex";
+  return "openwiki/0.5.0";
 }
 function modelFor(input) {
   return String(

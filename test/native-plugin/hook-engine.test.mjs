@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
 import { repositoryChangedPaths } from "../../plugins/less-openwiki/runtime/storage.mjs";
+import { hash } from "../../plugins/less-openwiki/runtime/storage.mjs";
 
 const engine = path.resolve(
   "plugins/less-openwiki/hooks/less-openwiki-hook.mjs",
@@ -94,6 +95,10 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.equal(claims.schemaVersion, 1);
   assert.equal(claims.claims.length, 1);
   assert.match(claims.pageVersion, /^sha256:/u);
+  const quickstart = await readFile(
+    path.join(root, "openwiki", "quickstart.md"),
+  );
+  assert.equal(claims.pageVersion, hash(quickstart));
   const manifest = JSON.parse(
     await readFile(path.join(root, "openwiki", ".page-manifest.json"), "utf8"),
   );
@@ -101,6 +106,10 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.match(
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
     /generated:/u,
+  );
+  assert.match(
+    await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
+    /verified:\n\s+- by: openwiki\/0\.5\.0/u,
   );
   const architecture = await readFile(
     path.join(root, "openwiki", "architecture", "overview.md"),

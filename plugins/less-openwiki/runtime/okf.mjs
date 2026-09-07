@@ -12,8 +12,50 @@ export async function finalizePage(root, page, actor, claims) {
     (_all, frontmatter) =>
       `---\n${frontmatter.replace(/^generated:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\ngenerated:\n  by: ${actor}\n  at: ${new Date().toISOString()}\n---`,
   );
-  if (next !== content)
-    await writeFile(file, next.endsWith("\n") ? next : `${next}\n`, "utf8");
+  const generated = next.endsWith("\n") ? next : `${next}\n`;
+  const verified = synchronizeVerification(generated, actor);
+  if (verified !== content) await writeFile(file, verified, "utf8");
+}
+
+function synchronizeVerification(content, actor) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
+  if (!match) return content;
+  const retained = [];
+  const inline =
+    /^verified:\s*\{\s*by:\s*([^,}]+)(?:,\s*at:\s*([^}]+))?\s*\}\s*$/mu.exec(
+      match[1],
+    );
+  const verified = /^verified:\n((?:^[ \t].*(?:\n|$))*)/mu.exec(match[1]);
+  if (inline && !inline[1].trim().startsWith("openwiki/")) {
+    retained.push(`  - by: ${inline[1].trim()}`);
+    if (inline[2]?.trim()) retained.push(`    at: ${inline[2].trim()}`);
+  } else if (verified) {
+    const entries = verified[1].split(/\r?\n/u);
+    let event = [];
+    const flush = () => {
+      if (
+        event.length &&
+        !event.some((line) => /^\s*(?:-\s*)?by:\s*openwiki\//u.test(line))
+      )
+        retained.push(...event);
+      event = [];
+    };
+    for (const line of entries) {
+      if (/^\s*-\s*by:/u.test(line) && event.length) flush();
+      if (line.trim()) event.push(line);
+    }
+    flush();
+  }
+  const clean = match[1]
+    .replace(/^verified:\s*\{[^\n]*\}\s*\n?/mu, "")
+    .replace(/^verified:\n(?:^[ \t].*(?:\n|$))*/mu, "")
+    .trimEnd();
+  const existing = retained.length ? `${retained.join("\n")}\n` : "";
+  const block = `verified:\n${existing}  - by: ${actor}\n    at: ${new Date().toISOString()}\n`;
+  return content.replace(
+    /^---\r?\n([\s\S]*?)\r?\n---/u,
+    `---\n${clean}\n${block}---`,
+  );
 }
 
 /** Builds deterministic index pages after all factual pages and Claims validate. */

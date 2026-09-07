@@ -109,6 +109,15 @@ export async function removeClaims(root, page) {
   await rm(claimsPath(root, page), { force: true });
 }
 
+/** Refreshes the sidecar after deterministic OKF projection changes page bytes. */
+export async function refreshClaimsPageVersion(root, page) {
+  const file = claimsPath(root, page);
+  const persisted = await loadClaims(file);
+  if (!persisted) return;
+  persisted.pageVersion = hash(await readFile(path.join(root, page)));
+  await writeFile(file, `${JSON.stringify(persisted, null, 2)}\n`);
+}
+
 function sameEvidence(left, right) {
   return (
     left.length === right.length &&
