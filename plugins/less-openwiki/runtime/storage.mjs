@@ -3,6 +3,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  readlink,
   readdir,
   rename,
   rm,
@@ -43,7 +44,11 @@ export function git(cwd, args) {
 }
 
 function gitRaw(cwd, args) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
   return result.status === 0 ? result.stdout : null;
 }
 
@@ -157,59 +162,165 @@ export function normalizePage(value) {
 
 export async function sourceSnapshot(root) {
   const ignore = await loadIgnore(root);
-  const files = await repositoryFiles(root);
+  const [head, trackedOutput, untrackedOutput, statusOutput] =
+    await Promise.all([
+      fingerprintHead(root),
+      fingerprintGit(root, ["ls-files", "--cached", "-z"]),
+      fingerprintGit(root, [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ]),
+      fingerprintGit(root, [
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--no-renames",
+        "-z",
+      ]),
+    ]);
+  const tracked = new Set(splitGitNul(trackedOutput).map(assertGitPath));
+  const candidates = new Set([
+    ...tracked,
+    ...splitGitNul(untrackedOutput).map(assertGitPath),
+  ]);
+  try {
+    await lstat(path.join(root, ".openwikiignore"));
+    candidates.add(".openwikiignore");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const visible = [...candidates]
+    .filter((file) => visibleSourcePath(file, ignore))
+    .sort(compareCodeUnits);
+  const statuses = splitGitNul(statusOutput)
+    .map((record) => {
+      if (record.length < 4 || record[2] !== " ")
+        throw new Error("Git returned malformed porcelain status output.");
+      return { code: record.slice(0, 2), path: assertGitPath(record.slice(3)) };
+    })
+    .filter(({ path: file }) => visibleSourcePath(file, ignore))
+    .sort((left, right) =>
+      compareCodeUnits(
+        `${left.code}\0${left.path}`,
+        `${right.code}\0${right.path}`,
+      ),
+    );
   const digest = createHash("sha256");
-  digest.update("openwiki-source-v1\0");
-  digest.update(
-    (git(root, ["rev-parse", "--verify", "HEAD"]) ?? "unborn").trim(),
-  );
-  // A source snapshot is also sensitive to the Git index. Identical worktree
-  // bytes are not equivalent when one version is staged and the other is not.
-  for (const record of (
-    gitRaw(root, [
-      "status",
-      "--porcelain=v1",
-      "--untracked-files=all",
-      "--no-renames",
-      "-z",
-    ]) ?? ""
-  ).split("\0")) {
-    if (record.length < 4 || record[2] !== " ") continue;
-    const file = record.slice(3).replace(/\\/gu, "/");
-    if (
-      file === WIKI ||
-      file.startsWith(`${WIKI}/`) ||
-      (file !== ".openwikiignore" && ignore(file))
-    )
-      continue;
-    digest.update(`status\0${record.slice(0, 2)}\0${file}\0`);
+  updateFingerprintField(digest, "format", "openwiki-source-fingerprint-v1");
+  updateFingerprintField(digest, "head", head);
+  for (const status of statuses) {
+    updateFingerprintField(digest, "status-code", status.code);
+    updateFingerprintField(digest, "status-path", status.path);
   }
-  for (const file of files) {
-    if (
-      file === ".git" ||
-      file.startsWith(".git/") ||
-      file === WIKI ||
-      file.startsWith(`${WIKI}/`) ||
-      (file !== ".openwikiignore" && ignore(file))
-    )
-      continue;
-    const absolute = path.join(root, file);
-    let stats;
-    try {
-      stats = await lstat(absolute);
-    } catch {
-      digest.update(`missing\0${file}\0`);
-      continue;
-    }
-    if (!stats.isFile() || stats.isSymbolicLink()) continue;
-    digest.update(`file\0${file}\0`);
-    digest.update(await readFile(absolute));
-    digest.update("\0");
-  }
+  for (const file of visible)
+    await updateFingerprintSourceEntry(digest, root, file, tracked.has(file));
   return {
     fingerprint: `sha256:${digest.digest("hex")}`,
-    gitHead: git(root, ["rev-parse", "--verify", "HEAD"]) ?? undefined,
+    ...(head.startsWith("unborn:") ? {} : { gitHead: head }),
   };
+}
+
+async function fingerprintHead(root) {
+  const head = gitRaw(root, ["rev-parse", "--verify", "HEAD"]);
+  if (head) return head.trimEnd();
+  const symbolic = gitRaw(root, ["symbolic-ref", "-q", "HEAD"]);
+  if (symbolic?.trim()) return `unborn:${symbolic.trimEnd()}`;
+  throw new Error(
+    "Unable to resolve repository HEAD for source fingerprinting.",
+  );
+}
+
+function fingerprintGit(root, args) {
+  const output = gitRaw(root, args);
+  if (output === null)
+    throw new Error(
+      `Git failed while creating source fingerprint: git ${args.join(" ")}`,
+    );
+  return output;
+}
+
+function splitGitNul(output) {
+  if (!output) return [];
+  if (!output.endsWith("\0"))
+    throw new Error("Git returned non-NUL-terminated fingerprint output.");
+  return output.slice(0, -1).split("\0");
+}
+
+function assertGitPath(value) {
+  if (!value || path.posix.isAbsolute(value))
+    throw new Error(`Git returned an invalid repository path: ${value}`);
+  const normalized = path.posix.normalize(value);
+  if (normalized === ".." || normalized.startsWith("../"))
+    throw new Error(`Git returned an escaping repository path: ${value}`);
+  return normalized;
+}
+
+function visibleSourcePath(file, ignore) {
+  return (
+    file === ".openwikiignore" ||
+    (file !== ".git" &&
+      !file.startsWith(".git/") &&
+      file !== WIKI &&
+      !file.startsWith(`${WIKI}/`) &&
+      !ignore(file))
+  );
+}
+
+async function updateFingerprintSourceEntry(digest, root, file, tracked) {
+  const absolute = path.resolve(root, file);
+  if (!isWithin(root, absolute))
+    throw new Error(`Source fingerprint path escaped the repository: ${file}`);
+  updateFingerprintField(digest, "path", file);
+  let stats;
+  try {
+    stats = await lstat(absolute);
+  } catch (error) {
+    if (tracked && error?.code === "ENOENT") {
+      updateFingerprintField(digest, "kind", "tracked-missing");
+      return;
+    }
+    throw new Error(`Unable to inspect source path ${file}.`, { cause: error });
+  }
+  updateFingerprintField(
+    digest,
+    "executable",
+    stats.mode & 0o111 ? "yes" : "no",
+  );
+  if (stats.isFile()) {
+    updateFingerprintField(digest, "kind", "file");
+    updateFingerprintField(digest, "bytes", await readFile(absolute));
+    return;
+  }
+  if (stats.isSymbolicLink()) {
+    updateFingerprintField(digest, "kind", "symlink");
+    updateFingerprintField(
+      digest,
+      "target",
+      await readlink(absolute, { encoding: "buffer" }),
+    );
+    return;
+  }
+  if (stats.isDirectory()) {
+    updateFingerprintField(digest, "kind", "directory");
+    return;
+  }
+  throw new Error(`Unsupported source entry type at ${file}.`);
+}
+
+function updateFingerprintField(digest, label, value) {
+  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value, "utf8");
+  digest.update(label, "utf8");
+  digest.update("\0");
+  digest.update(String(bytes.length), "utf8");
+  digest.update("\0");
+  digest.update(bytes);
+  digest.update("\0");
+}
+
+function compareCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Returns the upstream planner's visible changed-source window, best effort. */

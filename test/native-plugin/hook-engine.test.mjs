@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -375,6 +383,25 @@ test("source snapshots distinguish staged and unstaged source state", async (t) 
   execFileSync("git", ["add", "README.md"], { cwd: root });
   const staged = (await sourceSnapshot(root)).fingerprint;
   assert.notEqual(staged, unstaged);
+});
+
+test("source snapshots include executable modes and symlink targets", async (t) => {
+  const root = await fixture(t);
+  await writeFile(
+    path.join(root, "tool.sh"),
+    "#!/bin/sh\necho fixture\n",
+    "utf8",
+  );
+  const regular = (await sourceSnapshot(root)).fingerprint;
+  await chmod(path.join(root, "tool.sh"), 0o755);
+  const executable = (await sourceSnapshot(root)).fingerprint;
+  assert.notEqual(executable, regular);
+  await symlink("first-target", path.join(root, "source-link"));
+  const firstLink = (await sourceSnapshot(root)).fingerprint;
+  await rm(path.join(root, "source-link"));
+  await symlink("second-target", path.join(root, "source-link"));
+  const secondLink = (await sourceSnapshot(root)).fingerprint;
+  assert.notEqual(firstLink, secondLink);
 });
 
 test("a resumed run recovers a checkpointed page from durable manifest coverage", async (t) => {
