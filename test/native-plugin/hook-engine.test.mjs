@@ -74,11 +74,31 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     tool_input: { file_path: "openwiki/.intents/plan.json" },
   });
   assert.match(plan.hookSpecificOutput.additionalContext, /accepted/u);
+  assert.match(
+    plan.hookSpecificOutput.additionalContext,
+    /Title: Architecture\. Purpose: Explain runtime ownership\./u,
+  );
+  assert.match(
+    plan.hookSpecificOutput.additionalContext,
+    /Research seed paths: README\.md\. Related pages: none specified\./u,
+  );
   state = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(state.phase, "generating");
   assert.deepEqual(
     state.plan.pages.map((page) => page.path),
     ["openwiki/architecture/overview.md", "openwiki/quickstart.md"],
+  );
+  const resumedContext = invoke(root, "session-start", {
+    hook_event_name: "SessionStart",
+    cwd: root,
+  });
+  assert.match(
+    resumedContext.hookSpecificOutput.additionalContext,
+    /Current page: openwiki\/architecture\/overview\.md\. Title: Architecture\./u,
+  );
+  assert.match(
+    resumedContext.hookSpecificOutput.additionalContext,
+    /Purpose: Explain runtime ownership\. Research seed paths: README\.md\./u,
   );
   assert.deepEqual(
     invoke(root, "post-tool", {

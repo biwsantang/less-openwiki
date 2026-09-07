@@ -68,6 +68,11 @@ context; a page without a saved revision is explicitly marked for a full review.
 This preserves correct incremental updates after partially completed or resumed
 runs.
 
+While generating or resuming, the hook also supplies the complete current page
+job: its title, purpose, repository seed paths, related pages, and any planner
+instructions. This gives a fresh host session the same focused work context as
+the upstream worker queue without exposing a separate command surface.
+
 Before an update begins, the lifecycle normalizes any factual page that lacks
 usable OKF front matter into a minimal, explicitly code-derived record. Existing
 usable metadata remains unchanged, so the update can enrich it without a manual

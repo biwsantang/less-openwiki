@@ -902,9 +902,22 @@ function currentJob(state) {
 function pendingSummary(state) {
   const pending =
     state.plan?.pages.filter((page) => page.status === "pending") ?? [];
-  return pending.length
-    ? `Current page: ${pending[0].path}. ${pending.length - 1} page(s) remain after it.`
-    : "All queued pages are complete; finish the run.";
+  if (pending.length === 0)
+    return "All queued pages are complete; finish the run.";
+  const current = pending[0];
+  const details = [
+    `Current page: ${current.path}.`,
+    contextSentence("Title", current.title),
+    contextSentence("Purpose", current.purpose),
+    `Research seed paths: ${current.seedPaths.length ? current.seedPaths.join(", ") : "none specified"}.`,
+    `Related pages: ${current.relatedPages.length ? current.relatedPages.join(", ") : "none specified"}.`,
+    `Instructions: ${current.instructions.length ? current.instructions.join(" | ") : "none specified"}.`,
+    `${pending.length - 1} page(s) remain after it.`,
+  ];
+  return details.join(" ");
+}
+function contextSentence(label, value) {
+  return `${label}: ${value}${/[.!?]$/u.test(value) ? "" : "."}`;
 }
 async function readLastUpdate(root) {
   const value = await readJson(lastUpdatePath(root));
