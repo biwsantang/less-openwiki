@@ -372,22 +372,39 @@ async function validateInternalLinks(root) {
           hashIndex === -1
             ? undefined
             : decodeURIComponent(href.slice(hashIndex + 1));
-        const absolute = target.startsWith("/")
-          ? path.resolve(root, `.${target}`)
-          : path.resolve(path.dirname(file), target || path.basename(file));
-        if (!inside(root, absolute) || !(await exists(absolute))) {
+        const sourcePath = `/${relative(root, file)}`;
+        if (!target && anchor) {
+          const anchors = headingAnchors(cleaned);
+          if (!anchors.has(anchor))
+            stamped.push({
+              href,
+              line: index,
+              message: `heading anchor \"${anchor}\" does not exist in ${sourcePath}`,
+            });
+          continue;
+        }
+        const virtualTarget = path.posix.normalize(
+          target.startsWith("/")
+            ? target
+            : path.posix.join(path.posix.dirname(sourcePath), target),
+        );
+        const absolute = path.resolve(root, `.${virtualTarget}`);
+        const directory = target.endsWith("/");
+        if (!(await exists(absolute))) {
           stamped.push({
+            href,
             line: index,
-            message: `target \"${target || "#"}\" does not exist`,
+            message: `${directory ? "directory" : "file"} \"${target}\" does not exist`,
           });
           continue;
         }
-        if (anchor && absolute.toLowerCase().endsWith(".md")) {
+        if (anchor && !directory && absolute.toLowerCase().endsWith(".md")) {
           const anchors = headingAnchors(await readFile(absolute, "utf8"));
           if (!anchors.has(anchor))
             stamped.push({
+              href,
               line: index,
-              message: `heading anchor \"${anchor}\" does not exist`,
+              message: `heading anchor \"${anchor}\" does not exist in \"${target}\"`,
             });
         }
       }
@@ -401,7 +418,7 @@ async function validateInternalLinks(root) {
       output.splice(
         issue.line,
         0,
-        `<!-- openwiki: broken internal link: ${issue.message}. Repair this link. -->`,
+        `<!-- openwiki: broken internal link [${issue.href}] ${issue.message}. Fix the href or restore the target, then delete this comment. -->`,
       );
     await writeFile(
       file,
@@ -496,10 +513,6 @@ async function markdownFiles(root) {
       result.push(file);
   }
   return result.sort();
-}
-function inside(root, candidate) {
-  const value = path.relative(root, candidate);
-  return value === "" || (!value.startsWith("..") && !path.isAbsolute(value));
 }
 async function exists(file) {
   try {

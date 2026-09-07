@@ -18,7 +18,10 @@ import {
 } from "../../plugins/less-openwiki/runtime/claims.mjs";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
 import { finish } from "../../plugins/less-openwiki/runtime/lifecycle.mjs";
-import { finalizeGeneratedProvenance } from "../../plugins/less-openwiki/runtime/okf.mjs";
+import {
+  finalizeGeneratedProvenance,
+  finalizeWiki,
+} from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
   hash,
   repositoryChangedPaths,
@@ -676,6 +679,32 @@ test("the update window honors upstream .openwikiignore glob and directory seman
     "logs/keep.log",
     "nested/root-only",
   ]);
+});
+
+test("native link validation clamps paths and stamps upstream-compatible diagnostics", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", "nested"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "nested", "page.md"),
+    "---\ntype: concept\ntitle: Page\n---\n\n# Page\n[repository](../../README.md)\n[missing](../../../../etc/passwd)\n[anchor](#missing-anchor)\n",
+    "utf8",
+  );
+
+  await finalizeWiki(root);
+
+  const page = await readFile(
+    path.join(root, "openwiki", "nested", "page.md"),
+    "utf8",
+  );
+  assert.doesNotMatch(page, /broken internal link \[\.\.\/\.\.\/README\.md\]/u);
+  assert.match(
+    page,
+    /<!-- openwiki: broken internal link \[\.\.\/\.\.\/\.\.\/\.\.\/etc\/passwd\] file "\.\.\/\.\.\/\.\.\/\.\.\/etc\/passwd" does not exist\. Fix the href or restore the target, then delete this comment\. -->/u,
+  );
+  assert.match(
+    page,
+    /<!-- openwiki: broken internal link \[#missing-anchor\] heading anchor "missing-anchor" does not exist in \/openwiki\/nested\/page\.md\. Fix the href or restore the target, then delete this comment\. -->/u,
+  );
 });
 
 test("an update is a no-op only with no visible source changes and no Claims debt", async (t) => {
