@@ -28,7 +28,7 @@ import {
   refreshClaimsPageVersion,
   removeClaims,
 } from "./claims.mjs";
-import { finalizePage, finalizeWiki } from "./okf.mjs";
+import { finalizePage, finalizeWiki, normalizeWikiOkf } from "./okf.mjs";
 
 export async function sessionContext(root) {
   const state = await loadRun(root);
@@ -49,6 +49,7 @@ export async function startOrResume(root, input) {
   const mode = existingPages.length === 0 ? "init" : "update";
   const source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
+  if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
   const changedPaths = await repositoryChangedPaths(root, lastUpdate?.gitHead);
   const claimIssues = mode === "update" ? await preflightClaims(root) : [];
   if (
@@ -654,10 +655,8 @@ async function validatePage(root, page) {
   const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/u);
   const errors = [];
   if (!frontmatter) errors.push(`${page} is missing YAML front matter.`);
-  else
-    for (const field of ["type", "title", "description"])
-      if (!new RegExp(`^${field}:\\s*\\S`, "mu").test(frontmatter[1]))
-        errors.push(`${page} is missing '${field}' front matter.`);
+  else if (!/^type:\s*\S/mu.test(frontmatter[1]))
+    errors.push(`${page} is missing 'type' front matter.`);
   return { ok: errors.length === 0, errors };
 }
 async function stampGenerated(root, page, actor) {

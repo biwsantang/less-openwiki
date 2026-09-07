@@ -2,6 +2,75 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hash, isDirectory } from "./storage.mjs";
 
+/**
+ * Brings existing factual pages to the minimum OKF shape before an update.
+ * Valid front matter is left untouched; an unusable block is replaced with
+ * truthful code-derived metadata so the authoring run can enrich it safely.
+ */
+export async function normalizeWikiOkf(root, language = "en") {
+  for (const file of await markdownFiles(path.join(root, "openwiki"))) {
+    const original = await readFile(file, "utf8");
+    if (hasUsableOkfType(original)) continue;
+    const { body } = splitFrontmatter(original);
+    const title = firstHeading(body) ?? titleFromFilename(file);
+    const content = `---\ntype: ${JSON.stringify(conceptTypeFor(language))}\ntitle: ${JSON.stringify(title)}\nopenwiki_generated: true\n---\n\n${body}`;
+    if (content !== original) await writeFile(file, content, "utf8");
+  }
+}
+
+function hasUsableOkfType(content) {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(
+    content,
+  )?.[1];
+  if (!frontmatter) return false;
+  const raw = /^type:\s*(.+?)\s*$/mu.exec(frontmatter)?.[1]?.trim();
+  if (!raw || /^(?:null|~|\[|\{|\||>|-)/iu.test(raw)) return false;
+  const value = /^(["'])(.*)\1$/u.exec(raw)?.[2] ?? raw;
+  return Boolean(value.trim());
+}
+
+function splitFrontmatter(content) {
+  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/u.exec(content);
+  return { body: match ? content.slice(match[0].length) : content };
+}
+
+function firstHeading(content) {
+  return /^#\s+(.+?)\s*#*\s*$/mu.exec(content)?.[1]?.trim();
+}
+
+function titleFromFilename(file) {
+  const base = path.posix.basename(file, ".md").replace(/[-_]+/gu, " ").trim();
+  return base ? `${base[0].toUpperCase()}${base.slice(1)}` : "Documentation";
+}
+
+function conceptTypeFor(language) {
+  const labels = {
+    ar: "مرجع",
+    ca: "Referència",
+    de: "Referenz",
+    es: "Referencia",
+    fr: "Référence",
+    it: "Riferimento",
+    ja: "リファレンス",
+    ko: "참조",
+    pt: "Referência",
+    ru: "Справочник",
+    th: "อ้างอิง",
+    tr: "Referans",
+    uk: "Довідник",
+    vi: "Tham khảo",
+    zh: "参考",
+    "zh-TW": "參考",
+  };
+  let locale;
+  try {
+    locale = new Intl.Locale(language).toString();
+  } catch {
+    locale = language;
+  }
+  return labels[locale] ?? labels[locale.split("-")[0]] ?? "Reference";
+}
+
 /** Applies page-local provenance and Claims-source projections after Claims succeeds. */
 export async function finalizePage(root, page, actor, claims) {
   await projectClaimSources(root, page, claims);

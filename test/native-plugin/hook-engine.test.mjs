@@ -222,6 +222,25 @@ test("a changed documentation language adds every omitted factual page to the pl
   );
 });
 
+test("an update normalizes an existing page with unusable front matter", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "existing-page.md"),
+    "# Existing page\n\nThis is existing documentation.\n",
+    "utf8",
+  );
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  assert.equal(
+    await readFile(path.join(root, "openwiki", "existing-page.md"), "utf8"),
+    '---\ntype: "Reference"\ntitle: "Existing page"\nopenwiki_generated: true\n---\n\n# Existing page\n\nThis is existing documentation.\n',
+  );
+});
+
 test("an update plan adds omitted work for stale Claims", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });

@@ -47,6 +47,11 @@ adds work required to reconcile stale Claims and to complete a language rewrite.
 They are removed at checkpoints and never become documentation output. The
 skill does not edit durable lifecycle files directly.
 
+Before an update begins, the lifecycle normalizes any factual page that lacks
+usable OKF front matter into a minimal, explicitly code-derived record. Existing
+usable metadata remains unchanged, so the update can enrich it without a manual
+format-conversion step.
+
 ## Host packaging
 
 | Host        | Manifest                     | Marketplace                        | Hook package       |
