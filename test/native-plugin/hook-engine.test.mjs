@@ -192,6 +192,21 @@ test("repository evidence uses upstream V1 whole-file and relocating line-range 
   assert.equal(relocated.content, "selected\n");
 });
 
+test("native prompt detection recognizes an onboarding guide request", async (t) => {
+  const root = await fixture(t);
+  const result = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create an onboarding guide for this codebase.",
+  });
+  assert.match(result.hookSpecificOutput.additionalContext, /started/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+});
+
 test("a changed documentation language adds every omitted factual page to the plan", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });

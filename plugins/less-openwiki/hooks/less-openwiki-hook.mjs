@@ -58,12 +58,15 @@ function normalize(result) {
 
 function documentationRequest(event) {
   const prompt = String(event.prompt ?? event.user_prompt ?? "");
-  return (
-    /\b(openwiki|wiki|documentation|docs?)\b/iu.test(prompt) &&
-    /\b(create|generate|initialize|initialise|update|refresh|maintain|document|build|write|resume)\b/iu.test(
+  const documentationTarget =
+    /\b(openwiki|wiki|documentation|docs?|knowledge\s+base|onboarding\s+(?:guide|documentation)|(?:repository|project|codebase)\s+(?:guide|documentation|map))\b/iu.test(
       prompt,
-    )
-  );
+    );
+  const documentationAction =
+    /\b(create|generate|initialize|initialise|update|refresh|maintain|document|build|write|resume|map)\b/iu.test(
+      prompt,
+    );
+  return documentationTarget && documentationAction;
 }
 
 async function readInput() {
