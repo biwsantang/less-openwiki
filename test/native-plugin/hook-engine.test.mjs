@@ -9,53 +9,59 @@ const engine = path.resolve(
   "plugins/less-openwiki/hooks/less-openwiki-hook.mjs",
 );
 
-test("the hook engine checkpoints, validates, resumes, and finalizes a documentation run", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "less-openwiki-hook-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  execFileSync("git", ["init", "--quiet"], { cwd: root });
-  await writeFile(path.join(root, "README.md"), "# Fixture\n", "utf8");
-
+test("native hooks accept a semantic plan, reconcile Claims, and finalize compatible state", async (t) => {
+  const root = await fixture(t);
   const begin = invoke(root, "user-prompt", {
     hook_event_name: "UserPromptSubmit",
     cwd: root,
     prompt: "Initialize project documentation as a wiki.",
   });
-  assert.match(begin.hookSpecificOutput.additionalContext, /started/u);
-
+  assert.match(begin.hookSpecificOutput.additionalContext, /plan intent/u);
   const runFile = path.join(root, "openwiki", ".run.json");
   let state = JSON.parse(await readFile(runFile, "utf8"));
-  assert.equal(state.mode, "init");
+  assert.equal(state.phase, "planning");
+  assert.equal(state.previousLastUpdate, null);
+
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      {
+        path: "architecture/overview.md",
+        title: "Architecture",
+        purpose: "Explain runtime ownership.",
+        seedPaths: ["README.md"],
+      },
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Route readers to the architecture.",
+      },
+    ],
+  });
+  const plan = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  assert.match(plan.hookSpecificOutput.additionalContext, /accepted/u);
+  state = JSON.parse(await readFile(runFile, "utf8"));
+  assert.equal(state.phase, "generating");
   assert.deepEqual(
     state.plan.pages.map((page) => page.path),
-    [
-      "openwiki/quickstart.md",
-      "openwiki/architecture/overview.md",
-      "openwiki/testing/overview.md",
-    ],
+    ["openwiki/architecture/overview.md", "openwiki/quickstart.md"],
   );
 
   const denied = invoke(root, "pre-tool", {
     hook_event_name: "PreToolUse",
     cwd: root,
-    tool_input: { file_path: "openwiki/testing/overview.md" },
+    tool_input: { file_path: "openwiki/quickstart.md" },
   });
   assert.match(
     denied.hookSpecificOutput.permissionDecisionReason,
-    /quickstart/u,
+    /architecture/u,
   );
 
-  const firstPage = path.join(root, "openwiki", "quickstart.md");
-  await mkdir(path.dirname(firstPage), { recursive: true });
-  await writeFile(firstPage, "# Incomplete\n", "utf8");
-  const restored = invoke(root, "post-tool", {
-    hook_event_name: "PostToolUse",
-    cwd: root,
-    tool_input: { file_path: "openwiki/quickstart.md" },
-  });
-  assert.match(restored.systemMessage, /restored/u);
-  await assert.rejects(readFile(firstPage, "utf8"));
-
   for (const page of state.plan.pages.map((entry) => entry.path)) {
+    await writeIntent(root, page, "README.md");
     const absolute = path.join(root, page);
     await mkdir(path.dirname(absolute), { recursive: true });
     await writeFile(
@@ -81,28 +87,35 @@ test("the hook engine checkpoints, validates, resumes, and finalizes a documenta
     ),
   );
   assert.equal(claims.schemaVersion, 1);
+  assert.equal(claims.claims.length, 1);
   assert.match(claims.pageVersion, /^sha256:/u);
   const manifest = JSON.parse(
     await readFile(path.join(root, "openwiki", ".page-manifest.json"), "utf8"),
   );
-  assert.equal(manifest.schemaVersion, 1);
   assert.ok(manifest.pages["/openwiki/quickstart.md"]);
+  assert.match(
+    await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
+    /generated:/u,
+  );
 });
 
-test("the hook engine preserves an interrupted checkpoint when source drifts", async (t) => {
-  const root = await mkdtemp(
-    path.join(os.tmpdir(), "less-openwiki-hook-drift-"),
+test("source content drift is detected even when Git status stays modified", async (t) => {
+  const root = await fixture(t);
+  await writeFile(
+    path.join(root, "README.md"),
+    "# Fixture changed once\n",
+    "utf8",
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
-  execFileSync("git", ["init", "--quiet"], { cwd: root });
-  await writeFile(path.join(root, "README.md"), "# Fixture\n", "utf8");
   invoke(root, "user-prompt", {
     hook_event_name: "UserPromptSubmit",
     cwd: root,
     prompt: "Create repository documentation.",
   });
-  await mkdir(path.join(root, "src"));
-  await writeFile(path.join(root, "src", "changed.js"), "export {};\n", "utf8");
+  await writeFile(
+    path.join(root, "README.md"),
+    "# Fixture changed twice\n",
+    "utf8",
+  );
   const output = invoke(root, "pre-tool", {
     hook_event_name: "PreToolUse",
     cwd: root,
@@ -112,21 +125,39 @@ test("the hook engine preserves an interrupted checkpoint when source drifts", a
     output.hookSpecificOutput.permissionDecisionReason,
     /source changed/u,
   );
-  const state = JSON.parse(
-    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
-  );
-  assert.equal(state.phase, "interrupted");
-  invoke(root, "user-prompt", {
-    hook_event_name: "UserPromptSubmit",
-    cwd: root,
-    prompt: "Update the repository documentation after the source change.",
-  });
-  const restarted = JSON.parse(
-    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
-  );
-  assert.equal(restarted.phase, "generating");
-  assert.notEqual(restarted.runId, state.runId);
 });
+
+async function fixture(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "less-openwiki-hook-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  execFileSync("git", ["init", "--quiet"], { cwd: root });
+  await writeFile(path.join(root, "README.md"), "# Fixture\n", "utf8");
+  return root;
+}
+
+async function writeIntent(root, page, evidencePath) {
+  await writeJson(
+    path.join(
+      root,
+      "openwiki",
+      ".intents",
+      page.replace(/^openwiki\//u, "").replace(/\.md$/u, ".json"),
+    ),
+    {
+      claims: [
+        {
+          statement: `${page} documents the fixture.`,
+          evidence: [{ resource: `repo://${evidencePath}` }],
+        },
+      ],
+    },
+  );
+}
+
+async function writeJson(file, value) {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(value)}\n`, "utf8");
+}
 
 function invoke(cwd, action, input) {
   const result = spawnSync(process.execPath, [engine, action], {

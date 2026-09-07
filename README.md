@@ -10,9 +10,9 @@ as the work proceeds.
 - Initializes and updates an `openwiki/` documentation map.
 - Writes focused architecture, workflow, operations, integration, and testing
   pages rather than a directory-by-directory inventory.
-- Runs each update as a resumable, ordered page queue.
-- Preserves generated-page provenance through Claims sidecars and a page
-  manifest.
+- Creates a semantic page plan, then runs it as a resumable, ordered queue.
+- Reconciles material Claims against repository evidence, then projects
+  provenance and sources into pages and the page manifest.
 - Detects source drift, checkpoints interruptions, rebuilds indexes, and
   validates pages before completion.
 - Keeps a `quickstart.md` routing page and repository agent instructions

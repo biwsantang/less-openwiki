@@ -12,6 +12,10 @@ const requiredFiles = [
   path.join(pluginRoot, "skills", "less-openwiki", "SKILL.md"),
   path.join(pluginRoot, "hooks", "hooks.json"),
   path.join(pluginRoot, "hooks", "less-openwiki-hook.mjs"),
+  path.join(pluginRoot, "runtime", "storage.mjs"),
+  path.join(pluginRoot, "runtime", "lifecycle.mjs"),
+  path.join(pluginRoot, "runtime", "claims.mjs"),
+  path.join(pluginRoot, "runtime", "okf.mjs"),
   path.join(root, ".agents", "plugins", "marketplace.json"),
   path.join(root, ".claude-plugin", "marketplace.json"),
 ];
@@ -23,8 +27,8 @@ for (const file of requiredFiles) {
 const codexManifest = await readJson(requiredFiles[0]);
 const claudeManifest = await readJson(requiredFiles[1]);
 const hooks = await readJson(requiredFiles[3]);
-const codexMarketplace = await readJson(requiredFiles[5]);
-const claudeMarketplace = await readJson(requiredFiles[6]);
+const codexMarketplace = await readJson(requiredFiles[9]);
+const claudeMarketplace = await readJson(requiredFiles[10]);
 
 assert(
   codexManifest.name === "less-openwiki",
@@ -79,7 +83,7 @@ if (validation.status !== 0) {
 }
 
 process.stdout.write(
-  "Native plugin manifests, hook package, and repository wiki are valid.\n",
+  "Native plugin manifests, extracted runtime, hook package, and repository wiki are valid.\n",
 );
 
 async function readJson(file) {

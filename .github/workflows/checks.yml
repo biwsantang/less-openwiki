@@ -36,3 +36,7 @@ jobs:
           node --check plugins/less-openwiki/scripts/validate-wiki.mjs
           node --check plugins/less-openwiki/scripts/upstream-docs-report.mjs
           node --check plugins/less-openwiki/hooks/less-openwiki-hook.mjs
+          node --check plugins/less-openwiki/runtime/storage.mjs
+          node --check plugins/less-openwiki/runtime/lifecycle.mjs
+          node --check plugins/less-openwiki/runtime/claims.mjs
+          node --check plugins/less-openwiki/runtime/okf.mjs

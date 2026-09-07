@@ -3,11 +3,13 @@
 This repository ships a native repository-documentation plugin for Codex and
 Claude Code. Start with [the plugin architecture](docs/native-plugin.md), the
 shared skill at `plugins/less-openwiki/skills/less-openwiki/SKILL.md`, and the
-hook engine at `plugins/less-openwiki/hooks/less-openwiki-hook.mjs`.
+hook adapter at `plugins/less-openwiki/hooks/less-openwiki-hook.mjs` and the
+extracted runtime at `plugins/less-openwiki/runtime/`.
 
-The skill owns research and authoring. The hooks own run state, validation,
-Claims sidecars, indexes, provenance, interruption, and finalization. Keep
-those responsibilities separate so documentation runs remain resumable.
+The skill owns semantic planning, research, Claims intent, and authoring. The
+hooks invoke lifecycle, Claims, and OKF runtime modules for state, validation,
+provenance, interruption, and finalization. Keep those responsibilities
+separate so documentation runs remain resumable.
 
 When changing documentation behavior, run `pnpm plugin:validate` and
 `pnpm plugin:test`. When merging upstream, fetch `upstream/main`, generate the

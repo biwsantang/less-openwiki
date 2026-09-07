@@ -8,7 +8,7 @@ around that work.
 documentation request
         │
         ▼
-shared skill ──► research and page authoring
+shared skill ──► semantic plan, Claims intent, and page authoring
         │                    │
         ▼                    ▼
 required hooks ─────► state, Claims, indexes, validation, provenance
@@ -21,24 +21,29 @@ resumable completion
 
 The hook engine runs at the native lifecycle points supplied by each host:
 
-| Event                                 | Outcome                                                                           |
-| ------------------------------------- | --------------------------------------------------------------------------------- |
-| `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                      |
-| `PreToolUse`                          | Keep generated-page work on the assigned page and protect lifecycle-owned state.  |
-| `PostToolUse`                         | Validate the page, synchronize its Claims sidecar, and checkpoint queue progress. |
-| `Stop`                                | Finalize only when every queued page is valid; otherwise keep the run active.     |
-| `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                           |
+| Event                                 | Outcome                                                                       |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                  |
+| `PreToolUse`                          | Protect lifecycle state and permit only the plan or current page work.        |
+| `PostToolUse`                         | Consume semantic intent, validate, reconcile Claims, and checkpoint progress. |
+| `Stop`                                | Finalize only when every queued page is valid; otherwise keep the run active. |
+| `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                       |
 
-The engine is an ordinary module invoked by these hooks. It has no background
-service and no user-facing control surface. Its durable repository outputs are:
+The hook adapter is intentionally thin. It invokes three ordinary internal
+modules: lifecycle (state, planning, snapshot, checkpoint and rollback),
+Claims (evidence and reconciliation), and OKF (front matter, provenance,
+sources, indexes and links). They have no background service and no user-facing
+control surface. Durable repository outputs are:
 
 - `openwiki/.run.json` while a run is active;
 - `openwiki/.claims/` for page grounding state;
 - `openwiki/.page-manifest.json` for completed-page coverage; and
 - `openwiki/.last-update.json` after completion or interruption.
 
-The skill never edits those files directly. It reads the hook-provided current
-page, researches repository evidence, and writes that page's Markdown.
+The skill uses temporary, hook-consumed intent files while a run is active: a
+semantic plan first, then a page-local Claims intent before each factual page.
+They are removed at checkpoints and never become documentation output. The
+skill does not edit durable lifecycle files directly.
 
 ## Host packaging
 

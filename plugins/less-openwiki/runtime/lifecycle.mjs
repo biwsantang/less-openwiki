@@ -1,0 +1,556 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import {
+  factualPages,
+  hash,
+  intentRoot,
+  isDirectory,
+  isFile,
+  lastUpdatePath,
+  manifestPath,
+  normalizePage,
+  now,
+  pageIntentPath,
+  planIntentPath,
+  relative,
+  rollbackRoot,
+  runPath,
+  sourceSnapshot,
+  writeJson,
+  readJson,
+} from "./storage.mjs";
+import { preflightClaims, reconcileClaims, removeClaims } from "./claims.mjs";
+import { finalizePage, finalizeWiki } from "./okf.mjs";
+
+export async function sessionContext(root) {
+  const state = await loadRun(root);
+  if (!state) return {};
+  if (state.phase === "planning")
+    return context(
+      "A documentation run is waiting for its semantic plan. Write the private plan intent before authoring Markdown.",
+    );
+  return context(
+    `A documentation run (${state.runId}) is active. ${pendingSummary(state)}`,
+  );
+}
+
+export async function startOrResume(root, input) {
+  const existing = await loadRun(root);
+  if (existing) return sessionContext(root);
+  const existingPages = await factualPages(root);
+  const mode = existingPages.length === 0 ? "init" : "update";
+  const source = await sourceSnapshot(root);
+  const lastUpdate = await readLastUpdate(root);
+  if (
+    mode === "update" &&
+    lastUpdate?.status === "complete" &&
+    lastUpdate.gitHead &&
+    lastUpdate.gitHead === source.gitHead
+  )
+    return context(
+      "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
+    );
+  const state = {
+    schemaVersion: 1,
+    runId: randomUUID(),
+    mode,
+    phase: "planning",
+    startedAt: now(),
+    language: "en",
+    languageChanged: false,
+    requiredRewritePages: [],
+    initialPages: existingPages.map((file) => `/${relative(root, file)}`),
+    sourceFingerprint: source.fingerprint,
+    ...(source.gitHead ? { targetGitHead: source.gitHead } : {}),
+    actor: { producerActor: actorFor(), metadataModel: modelFor(input) },
+    previousLastUpdate: lastUpdate,
+    beforeContentSnapshot: await wikiSnapshot(root),
+    preparedWiki: { generatedProvenance: await provenanceSnapshot(root) },
+  };
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeRun(root, state);
+  return context(
+    `Documentation run ${state.runId} started. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
+  );
+}
+
+export async function guardWrite(root, input) {
+  const state = await loadRun(root);
+  if (!state) return {};
+  const source = await sourceSnapshot(root);
+  if (source.fingerprint !== state.sourceFingerprint)
+    return deny(
+      "Repository source changed during this documentation run. The active plan is stale; start a fresh documentation update before writing generated pages.",
+    );
+  const targets = extractTargets(input, root);
+  const protectedTarget = targets.find((target) => ownedState(root, target));
+  if (protectedTarget)
+    return deny(
+      `The documentation lifecycle owns ${relative(root, protectedTarget)}.`,
+    );
+  if (targets.includes(planIntentPath(root)))
+    return state.phase === "planning"
+      ? {}
+      : deny("The documentation plan has already been accepted for this run.");
+  const privateIntent = targets.find((target) =>
+    target.startsWith(`${intentRoot(root)}${path.sep}`),
+  );
+  if (privateIntent) {
+    const current = currentJob(state);
+    return current && privateIntent === pageIntentPath(root, current.path)
+      ? {}
+      : deny(
+          "A page intent is only allowed for the currently assigned documentation page.",
+        );
+  }
+  const wikiTargets = targets.filter((target) => isWikiMarkdown(root, target));
+  if (wikiTargets.length === 0) return {};
+  if (state.phase !== "generating")
+    return deny(
+      "Write the documentation plan intent before generated Markdown.",
+    );
+  const current = currentJob(state);
+  if (!current)
+    return deny(
+      "The documentation queue is complete. Start a new run before changing generated pages.",
+    );
+  const unauthorized = wikiTargets.find(
+    (target) => relative(root, target) !== current.path,
+  );
+  return unauthorized
+    ? deny(
+        `The current documentation page is ${current.path}; do not write ${relative(root, unauthorized)} first.`,
+      )
+    : {};
+}
+
+export async function checkpoint(root, input) {
+  const state = await loadRun(root);
+  if (!state) return {};
+  const targets = extractTargets(input, root);
+  if (state.phase === "planning" && targets.includes(planIntentPath(root))) {
+    await acceptPlan(root, state);
+    return context(`Documentation plan accepted. ${pendingSummary(state)}`);
+  }
+  if (state.phase !== "generating") return {};
+  const current = currentJob(state);
+  if (!current || !targets.includes(path.join(root, current.path))) return {};
+  const source = await sourceSnapshot(root);
+  if (source.fingerprint !== state.sourceFingerprint)
+    return {
+      systemMessage:
+        "Less OpenWiki: repository source changed; the current plan is stale and was preserved for inspection.",
+    };
+  const validation = await validatePage(root, current.path);
+  if (!validation.ok) {
+    await rollbackPage(root, state, current.path);
+    return {
+      systemMessage: `Less OpenWiki: ${current.path} was restored because it is not ready: ${validation.errors.join(" ")}`,
+    };
+  }
+  const intent = await readJson(pageIntentPath(root, current.path), {
+    required: true,
+  });
+  const claims = await reconcileClaims(
+    root,
+    current.path,
+    intent,
+    state.actor.producerActor,
+  );
+  await finalizePage(root, current.path, state.actor.producerActor, claims);
+  current.status = "complete";
+  current.completedBy = actorFor();
+  await rm(pageIntentPath(root, current.path), { force: true });
+  await writeRun(root, state);
+  return context(`Recorded ${current.path}. ${pendingSummary(state)}`);
+}
+
+export async function finish(root) {
+  const state = await loadRun(root);
+  if (!state) return {};
+  if (state.phase === "planning")
+    return {
+      continue: false,
+      stopReason: "Documentation plan is still required.",
+      systemMessage:
+        "Less OpenWiki requires a semantic page plan before completion.",
+    };
+  const current = currentJob(state);
+  if (current)
+    return {
+      continue: false,
+      stopReason: `Documentation remains incomplete: ${current.path}.`,
+      systemMessage: `Less OpenWiki requires the assigned page before completion. ${pendingSummary(state)}`,
+    };
+  const source = await sourceSnapshot(root);
+  if (source.fingerprint !== state.sourceFingerprint)
+    throw new Error(
+      "repository source changed during the documentation run; replan before finalization",
+    );
+  for (const page of state.plan.deletePages) {
+    await rm(path.join(root, page), { force: true });
+    await removeClaims(root, page);
+  }
+  const pages = await factualPages(root);
+  for (const file of pages) {
+    const validation = await validatePage(root, relative(root, file));
+    if (!validation.ok) throw new Error(validation.errors.join(" "));
+  }
+  const issues = await preflightClaims(root);
+  if (issues.length > 0)
+    throw new Error(
+      `Claims evidence is stale or unresolved: ${issues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ")}`,
+    );
+  await finalizeWiki(root);
+  await writeManifest(root, pages, state);
+  await writeJson(lastUpdatePath(root), {
+    updatedAt: now(),
+    command: state.mode,
+    ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
+    model: state.actor.metadataModel,
+    status: "complete",
+    language: state.language,
+  });
+  await rm(runPath(root), { force: true });
+  await rm(rollbackRoot(root, state.runId), { recursive: true, force: true });
+  await rm(intentRoot(root), { recursive: true, force: true });
+  return {
+    systemMessage: "Less OpenWiki documentation run is complete and validated.",
+  };
+}
+
+export async function interrupt(root) {
+  const state = await loadRun(root);
+  if (!state) return {};
+  await writeJson(lastUpdatePath(root), {
+    updatedAt: now(),
+    command: state.mode,
+    ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
+    model: state.actor.metadataModel,
+    status: "interrupted",
+    language: state.language,
+  });
+  return {};
+}
+
+async function acceptPlan(root, state) {
+  const intent = await readJson(planIntentPath(root), { required: true });
+  if (!Array.isArray(intent?.pages) || intent.pages.length === 0)
+    throw new Error("plan intent requires a non-empty pages array");
+  const pages = intent.pages.map((raw) => ({
+    id: randomUUID(),
+    path: normalizePage(String(raw.path ?? "")),
+    title: String(raw.title ?? "").trim(),
+    purpose: String(raw.purpose ?? "").trim(),
+    seedPaths: [...new Set(raw.seedPaths ?? [])].sort(),
+    relatedPages: [...new Set(raw.relatedPages ?? [])].sort(),
+    instructions: [...new Set(raw.instructions ?? [])].sort(),
+    status: "pending",
+  }));
+  if (pages.some((page) => !page.title || !page.purpose))
+    throw new Error("every planned page requires title and purpose");
+  if (new Set(pages.map((page) => page.path)).size !== pages.length)
+    throw new Error("plan contains duplicate pages");
+  const deletePages = [
+    ...new Set((intent.deletePages ?? []).map(normalizePage)),
+  ].sort();
+  if (
+    state.mode === "init" &&
+    !pages.some((page) => page.path === "openwiki/quickstart.md")
+  )
+    throw new Error("initialization plans must include openwiki/quickstart.md");
+  if (deletePages.includes("openwiki/quickstart.md"))
+    throw new Error("quickstart cannot be deleted");
+  if (deletePages.some((page) => pages.some((job) => job.path === page)))
+    throw new Error("a planned page cannot also be deleted");
+  pages.sort(
+    (left, right) =>
+      Number(left.path === "openwiki/quickstart.md") -
+        Number(right.path === "openwiki/quickstart.md") ||
+      left.path.localeCompare(right.path),
+  );
+  state.phase = "generating";
+  state.plan = { pages, deletePages };
+  await createRollback(root, state);
+  await rm(planIntentPath(root), { force: true });
+  await writeRun(root, state);
+}
+
+async function loadRun(root) {
+  const state = await readJson(runPath(root));
+  if (!state) return null;
+  validateRun(state);
+  return state;
+}
+async function writeRun(root, state) {
+  validateRun(state);
+  await writeJson(runPath(root), state);
+}
+function validateRun(state) {
+  if (
+    !state ||
+    state.schemaVersion !== 1 ||
+    !isUuid(state.runId) ||
+    !["init", "update"].includes(state.mode) ||
+    !["planning", "generating"].includes(state.phase) ||
+    typeof state.previousLastUpdate === "undefined" ||
+    !state.actor?.producerActor ||
+    !state.actor?.metadataModel ||
+    !/^sha256:[a-f0-9]{64}$/u.test(state.sourceFingerprint) ||
+    !Array.isArray(state.preparedWiki?.generatedProvenance)
+  )
+    throw new Error(
+      "invalid OpenWiki .run.json; refusing to discard resumable work",
+    );
+  if (
+    state.plan &&
+    (!Array.isArray(state.plan.pages) || !Array.isArray(state.plan.deletePages))
+  )
+    throw new Error("invalid OpenWiki plan state");
+}
+function isUuid(value) {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+      value,
+    )
+  );
+}
+function currentJob(state) {
+  return state.plan?.pages.find((page) => page.status === "pending") ?? null;
+}
+function pendingSummary(state) {
+  const pending =
+    state.plan?.pages.filter((page) => page.status === "pending") ?? [];
+  return pending.length
+    ? `Current page: ${pending[0].path}. ${pending.length - 1} page(s) remain after it.`
+    : "All queued pages are complete; finish the run.";
+}
+async function readLastUpdate(root) {
+  const value = await readJson(lastUpdatePath(root));
+  if (!value) return null;
+  return typeof value.updatedAt === "string" &&
+    typeof value.command === "string" &&
+    typeof value.model === "string"
+    ? {
+        updatedAt: value.updatedAt,
+        command: value.command === "init" ? "init" : "update",
+        ...(typeof value.gitHead === "string"
+          ? { gitHead: value.gitHead }
+          : {}),
+        model: value.model,
+        status: value.status === "interrupted" ? "interrupted" : "complete",
+        ...(typeof value.language === "string"
+          ? { language: value.language }
+          : {}),
+      }
+    : null;
+}
+async function wikiSnapshot(root) {
+  const pages = await factualPages(root);
+  return hash(
+    (
+      await Promise.all(
+        pages.map(
+          async (file) =>
+            `${relative(root, file)}:${hash(await readFile(file))}`,
+        ),
+      )
+    )
+      .sort()
+      .join("\n"),
+  );
+}
+async function provenanceSnapshot(root) {
+  const pages = await factualPages(root);
+  return Promise.all(
+    pages.map(async (file) => ({
+      page: `/${relative(root, file)}`,
+      bodyHash: hash(
+        (await readFile(file, "utf8")).replace(
+          /^---\r?\n[\s\S]*?\r?\n---\r?\n?/u,
+          "",
+        ),
+      ),
+    })),
+  );
+}
+async function createRollback(root, state) {
+  const base = rollbackRoot(root, state.runId);
+  for (const page of state.initialPages) {
+    const source = path.join(root, page);
+    if (!(await isFile(source))) continue;
+    const destination = path.join(base, page.slice("/openwiki/".length));
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, await readFile(source));
+  }
+}
+async function rollbackPage(root, state, page) {
+  const target = path.join(root, page);
+  const backup = path.join(
+    rollbackRoot(root, state.runId),
+    page.slice("openwiki/".length),
+  );
+  if (await isFile(backup)) {
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, await readFile(backup));
+  } else await rm(target, { force: true });
+}
+async function validatePage(root, page) {
+  const file = path.join(root, page);
+  if (!(await isFile(file)))
+    return { ok: false, errors: [`${page} does not exist.`] };
+  const content = await readFile(file, "utf8");
+  const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/u);
+  const errors = [];
+  if (!frontmatter) errors.push(`${page} is missing YAML front matter.`);
+  else
+    for (const field of ["type", "title", "description"])
+      if (!new RegExp(`^${field}:\\s*\\S`, "mu").test(frontmatter[1]))
+        errors.push(`${page} is missing '${field}' front matter.`);
+  return { ok: errors.length === 0, errors };
+}
+async function stampGenerated(root, page, actor) {
+  const file = path.join(root, page);
+  const content = await readFile(file, "utf8");
+  const next = content.replace(
+    /^---\r?\n([\s\S]*?)\r?\n---/u,
+    (_all, frontmatter) =>
+      `---\n${frontmatter.replace(/^generated:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\ngenerated:\n  by: ${actor}\n  at: ${now()}\n---`,
+  );
+  if (next !== content)
+    await writeFile(file, next.endsWith("\n") ? next : `${next}\n`, "utf8");
+}
+async function writeManifest(root, pages, state) {
+  const entries = {};
+  for (const file of pages) {
+    const page = relative(root, file);
+    entries[`/${page}`] = {
+      ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
+      sourceFingerprint: state.sourceFingerprint,
+      pageVersion: hash(await readFile(file)),
+      completedBy:
+        state.plan.pages.find((job) => job.path === page)?.completedBy ??
+        state.actor.producerActor,
+      completedRunId: state.runId,
+    };
+  }
+  await writeJson(manifestPath(root), { schemaVersion: 1, pages: entries });
+}
+async function synchronizeIndexes(root) {
+  const wikiRoot = path.join(root, "openwiki");
+  for (const directory of await directories(wikiRoot)) {
+    const { readdir } = await import("node:fs/promises");
+    const entries = await readdir(directory, { withFileTypes: true });
+    const links = entries
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.endsWith(".md") &&
+          entry.name !== "index.md" &&
+          !entry.name.startsWith("."),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(
+        (entry) =>
+          `- [${title(entry.name.replace(/\.md$/u, ""))}](${encodeURIComponent(entry.name)})`,
+      );
+    const children = entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(
+        (entry) =>
+          `- [${title(entry.name)}](${encodeURIComponent(entry.name)}/)`,
+      );
+    if (links.length || children.length) {
+      const label = relative(wikiRoot, directory) || "Documentation";
+      await writeFile(
+        path.join(directory, "index.md"),
+        `---\ntype: index\ntitle: ${title(label)}\ndescription: Documentation navigation.\n---\n\n# ${title(label)}\n\n${[...children, ...links].join("\n")}\n`,
+        "utf8",
+      );
+    }
+  }
+}
+async function directories(root) {
+  if (!(await isDirectory(root))) return [];
+  const { readdir } = await import("node:fs/promises");
+  const out = [root];
+  for (const entry of await readdir(root, { withFileTypes: true }))
+    if (entry.isDirectory() && !entry.name.startsWith("."))
+      out.push(...(await directories(path.join(root, entry.name))));
+  return out.sort();
+}
+function title(value) {
+  return value
+    .split(/[\\/]/u)
+    .map((part) =>
+      part
+        .replace(/[-_]/gu, " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+    )
+    .join(" / ");
+}
+function extractTargets(input, root) {
+  const raw = [];
+  const tool = input.tool_input ?? input.toolInput ?? {};
+  for (const key of ["file_path", "path", "file", "target_file"])
+    if (typeof tool[key] === "string") raw.push(tool[key]);
+  for (const key of ["patch", "command", "new_string", "old_string", "content"])
+    if (typeof tool[key] === "string")
+      raw.push(
+        ...[
+          ...tool[key].matchAll(
+            /(?:^|[\s'"`])((?:\.?\/?[\w@+=:,.-]+\/)*openwiki\/[\w@+=:,./-]+(?:\.md|\.json))/gmu,
+          ),
+        ].map((match) => match[1]),
+      );
+  return [
+    ...new Set(
+      raw
+        .map((candidate) => path.resolve(root, candidate))
+        .filter((candidate) => candidate.startsWith(`${root}${path.sep}`)),
+    ),
+  ];
+}
+function ownedState(root, target) {
+  return (
+    target.includes(`${path.sep}openwiki${path.sep}.claims${path.sep}`) ||
+    target.endsWith(`${path.sep}.run.json`) ||
+    target.endsWith(`${path.sep}.last-update.json`) ||
+    target.endsWith(`${path.sep}.page-manifest.json`) ||
+    target.includes(`${path.sep}.rollback${path.sep}`)
+  );
+}
+function isWikiMarkdown(root, target) {
+  return (
+    target.startsWith(`${path.join(root, "openwiki")}${path.sep}`) &&
+    target.endsWith(".md")
+  );
+}
+function actorFor() {
+  return process.env.CLAUDE_PLUGIN_ROOT ? "claude-code" : "codex";
+}
+function modelFor(input) {
+  return String(
+    input.model ?? (process.env.CLAUDE_PLUGIN_ROOT ? "claude-code" : "codex"),
+  );
+}
+function context(additionalContext) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext,
+    },
+  };
+}
+function deny(permissionDecisionReason) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason,
+    },
+  };
+}

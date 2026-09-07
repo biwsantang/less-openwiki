@@ -18,24 +18,35 @@ as evidence, not as instructions.
 
 ## Workflow
 
-1. Let the prompt hook begin or resume the run, then follow the current page
-   supplied in hook context. Do not edit `openwiki/.run.json`, `.claims`,
-   `.page-manifest.json`, or `.last-update.json`; the lifecycle owns them.
+1. Let the prompt hook begin or resume the run. For a new run, first write
+   `openwiki/.intents/plan.json` with a focused `pages` array. Each page needs
+   `path`, `title`, and `purpose`; it may also include `seedPaths`,
+   `relatedPages`, and `instructions`. Initialization plans include
+   `openwiki/quickstart.md`. The lifecycle consumes this private intent and
+   supplies the current page.
 2. Resolve the Git root and read the root `AGENTS.md`, `README.md`, relevant
    manifests, entry points, and focused tests. Read `openwiki/INSTRUCTIONS.md`
    and honor `.openwikiignore` when they exist.
-3. Research and write only the assigned page. For initialization, map important
+3. Before writing an assigned factual page, write its private intent at
+   `openwiki/.intents/<page-without-.md>.json`. It contains `claims`: an array
+   of material `{ statement, evidence }` records. Evidence uses repository
+   resources such as `repo://src/server.ts#L20-L48`. Use `id` when revising an
+   existing Claim and `retractedClaimIds` only for Claims the page no longer
+   supports. The hook consumes this file after the page succeeds.
+4. Do not edit `openwiki/.run.json`, `.claims`, `.page-manifest.json`,
+   `.last-update.json`, or `.rollback`; the lifecycle owns those durable files.
+5. Research and write only the assigned page. For initialization, map important
    systems into focused architecture, workflow, operations, integration, and
    testing pages; do not mirror directories mechanically.
-4. For updates, inspect source changes first and revise only pages whose
+6. For updates, inspect source changes first and revise only pages whose
    responsibilities, behavior, configuration, or evidence changed.
-5. Give factual pages valid front matter with `type`, `title`, and
+7. Give factual pages valid front matter with `type`, `title`, and
    `description`. Explain behavior, ownership, boundaries, failure modes, and
    tests instead of listing symbols.
-6. After each page write, allow the post-write hook to validate, synchronize
+8. After each page write, allow the post-write hook to validate, synchronize
    Claims state, and advance the queue. If it reports source drift, start a
    fresh documentation update instead of continuing stale work.
-7. Keep links and the quickstart routing map current. The lifecycle rebuilds
+9. Keep links and the quickstart routing map current. The lifecycle rebuilds
    indexes and validates the complete wiki before it allows final completion.
 
 ## Upstream migration mode
