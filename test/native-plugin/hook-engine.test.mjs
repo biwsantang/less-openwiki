@@ -294,6 +294,36 @@ test("a regional language variant does not force a full page rewrite", async (t)
   assert.deepEqual(state.requiredRewritePages, []);
 });
 
+test("a plan rejects an unrecognized documentation language without advancing", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    language: "Korean",
+    pages: [
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Route readers.",
+      },
+    ],
+  });
+  const rejected = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  assert.match(rejected.systemMessage, /Unrecognized language "Korean"/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+});
+
 test("an update normalizes an existing page with unusable front matter", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });

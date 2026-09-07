@@ -354,7 +354,7 @@ async function acceptPlan(root, state) {
     ...new Set((intent.deletePages ?? []).map(normalizePage)),
   ].sort();
   if (typeof intent.language === "string" && intent.language.trim())
-    state.language = intent.language.trim();
+    state.language = resolveLanguage(intent.language);
   state.languageChanged = Boolean(
     state.previousLastUpdate?.language &&
     primaryLanguage(state.previousLastUpdate.language) !==
@@ -500,6 +500,23 @@ function primaryLanguage(language) {
   } catch {
     return language;
   }
+}
+
+function resolveLanguage(input) {
+  const value = input.trim();
+  try {
+    const [canonical] = Intl.getCanonicalLocales(value);
+    const primary = new Intl.Locale(canonical).language;
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(
+      primary,
+    );
+    if (name && name.toLowerCase() !== primary.toLowerCase()) return canonical;
+  } catch {
+    // The actionable error below is kept uniform for malformed and unknown tags.
+  }
+  throw new Error(
+    `Unrecognized language "${value}". Use a BCP-47 code such as ko, zh-CN, or pt-BR rather than a language name.`,
+  );
 }
 
 async function loadRun(root) {
