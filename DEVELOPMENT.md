@@ -1,70 +1,44 @@
 # Development
 
-## Run Against Another Local Repo
+Less OpenWiki is developed as a native coding-agent plugin, not as a standalone
+CLI or MCP service.
 
-Prerequisites:
+## Plugin layout
 
-- Node.js 20 or newer
-- pnpm
+- `plugins/less-openwiki/.codex-plugin/plugin.json` is the Codex manifest.
+- `plugins/less-openwiki/.claude-plugin/plugin.json` is the Claude Code
+  manifest.
+- `plugins/less-openwiki/skills/less-openwiki/SKILL.md` is the shared workflow.
+- `plugins/less-openwiki/scripts/` contains dependency-free validation and
+  upstream-migration tools.
+- `.agents/plugins/marketplace.json` and `.claude-plugin/marketplace.json`
+  publish the plugin from this repository.
 
-Set up pnpm's global bin directory once if `pnpm link --global` has not worked
-on this machine yet:
-
-```sh
-pnpm setup
-```
-
-Restart your shell, or source the profile file that `pnpm setup` changed. Then
-set up and link this package:
-
-```sh
-cd /path/to/openwiki
-pnpm install
-pnpm run build
-pnpm link --global
-```
-
-Run a dry test from the repo you want Less OpenWiki to inspect:
+Validate the distribution and existing repository documentation with:
 
 ```sh
-cd /path/to/target/repo
-OPENWIKI_DEV=1 openwiki --dry-run
+pnpm plugin:validate
 ```
 
-Run the real CLI from the target repo:
+## Tracking upstream
+
+The legacy source tree remains only to make upstream feature migrations
+auditable. It is not a supported runtime.
 
 ```sh
-cd /path/to/target/repo
-openwiki
-openwiki -p "Summarize what you can do"
-openwiki --modelId openai/gpt-5.5
-openwiki "Please focus on API documentation"
+git fetch upstream main
+pnpm upstream:docs -- --base HEAD --upstream upstream/main --output upstream-docs-report.md
 ```
 
-The target repo is still the current working directory. The global link only
-avoids typing the path to `dist/cli/cli.js`.
+Review the report with the native skill. Port documentation behavior only when
+it fits the native-agent model; do not revive standalone CLI, MCP, or
+provider-auth surfaces by accident.
 
-If you do not want to configure pnpm globals, use a shell alias instead:
+## Editing the skill
 
-```sh
-alias openwiki='node /path/to/openwiki/dist/cli/cli.js'
-```
+Keep `SKILL.md` focused on repository documentation. It should direct the host
+agent to research, author, and validate docs through native tools. It must not
+assume an OpenWiki MCP server, a bundled model, or user API keys.
 
-That alias can go in `~/.zshrc` if you want it to persist.
-
-After changing Less OpenWiki source code, rebuild from this package directory:
-
-```sh
-pnpm run build
-```
-
-The existing global link will keep using the rebuilt `dist/cli/cli.js`.
-
-Real runs can write:
-
-- `openwiki/`
-- `~/.openwiki/.env` for local OpenRouter model/key settings and optional LangSmith credentials
-
-Scheduled update workflow example:
-
-- `examples/openwiki-update.yml`
+After editing plugin files, run `pnpm plugin:validate`. Start a new Codex or
+Claude Code session after reinstalling a plugin so the host reloads its skill.

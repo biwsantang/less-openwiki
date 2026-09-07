@@ -1,0 +1,20 @@
+{
+  "name": "less-openwiki",
+  "interface": {
+    "displayName": "Less OpenWiki"
+  },
+  "plugins": [
+    {
+      "name": "less-openwiki",
+      "source": {
+        "source": "local",
+        "path": "./plugins/less-openwiki"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

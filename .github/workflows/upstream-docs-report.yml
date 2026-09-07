@@ -1,0 +1,40 @@
+name: Upstream Documentation Migration Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out fork history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - name: Fetch upstream main
+        run: |
+          git remote add upstream https://github.com/langchain-ai/openwiki.git 2>/dev/null || git remote set-url upstream https://github.com/langchain-ai/openwiki.git
+          git fetch --no-tags upstream main
+
+      - name: Generate migration report
+        run: |
+          node plugins/less-openwiki/scripts/upstream-docs-report.mjs --base HEAD --upstream upstream/main --output upstream-docs-report.md
+          cat upstream-docs-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload migration report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-docs-report
+          path: upstream-docs-report.md
+          if-no-files-found: error

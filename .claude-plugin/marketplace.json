@@ -1,0 +1,13 @@
+{
+  "name": "less-openwiki",
+  "owner": {
+    "name": "Biw Santang"
+  },
+  "plugins": [
+    {
+      "name": "less-openwiki",
+      "source": "./plugins/less-openwiki",
+      "description": "Native repository documentation workflow for Claude Code."
+    }
+  ]
+}

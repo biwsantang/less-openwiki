@@ -1,0 +1,11 @@
+{
+  "name": "less-openwiki",
+  "description": "Native repository documentation workflow for Claude Code.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Biw Santang"
+  },
+  "repository": "https://github.com/biwsantang/less-openwiki",
+  "license": "MIT",
+  "keywords": ["documentation", "repository", "wiki"]
+}
