@@ -256,6 +256,32 @@ test("an update normalizes an existing page with unusable front matter", async (
   );
 });
 
+test("OKF migration uses the upstream localized concept type fallback", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "existing.md"),
+    "# Existing\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "fr-CA",
+  });
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  assert.match(
+    await readFile(path.join(root, "openwiki", "existing.md"), "utf8"),
+    /type: "Référence"/u,
+  );
+});
+
 test("generated provenance preserves an untouched page's prior producer event", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
