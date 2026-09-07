@@ -167,6 +167,7 @@ export async function guardWrite(root, input) {
 export async function checkpoint(root, input) {
   const state = await loadRun(root);
   if (!state) return {};
+  if (!mayMutate(input)) return {};
   const targets = extractTargets(input, root);
   if (state.phase === "planning" && targets.includes(planIntentPath(root))) {
     await acceptPlan(root, state);
@@ -214,6 +215,11 @@ export async function checkpoint(root, input) {
   await rm(pageIntentPath(root, current.path), { force: true });
   await writeRun(root, state);
   return context(`Recorded ${current.path}. ${pendingSummary(state)}`);
+}
+
+function mayMutate(input) {
+  const name = String(input.tool_name ?? input.toolName ?? input.name ?? "");
+  return !/^(?:read|cat|list|ls|glob|grep|search|find)(?:[_ -]|$)/iu.test(name);
 }
 
 export async function finish(root) {

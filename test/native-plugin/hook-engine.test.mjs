@@ -75,6 +75,15 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     state.plan.pages.map((page) => page.path),
     ["openwiki/architecture/overview.md", "openwiki/quickstart.md"],
   );
+  assert.deepEqual(
+    invoke(root, "post-tool", {
+      hook_event_name: "PostToolUse",
+      cwd: root,
+      tool_name: "Read",
+      tool_input: { file_path: "openwiki/architecture/overview.md" },
+    }),
+    {},
+  );
 
   const denied = invoke(root, "pre-tool", {
     hook_event_name: "PreToolUse",
