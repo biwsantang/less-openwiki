@@ -1019,6 +1019,31 @@ test("Claims source projection preserves authored sources and replaces only nati
   );
 });
 
+test("Claims source projection preserves YAML flow mappings", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "sources.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Sources\nsources: [{ id: authored-source, resource: repo://AUTHORED.md, details: { owner: human } }]\n---\n\n# Sources\n",
+    "utf8",
+  );
+
+  await finalizePage(
+    root,
+    "openwiki/sources.md",
+    "openwiki/0.5.0",
+    [{ evidence: [{ resource: "repo://README.md" }] }],
+    "2026-01-01T00:00:00.000Z",
+  );
+
+  const content = await readFile(page, "utf8");
+  assert.match(content, /id: authored-source/u);
+  assert.match(content, /resource: repo:\/\/AUTHORED\.md/u);
+  assert.match(content, /owner: human/u);
+  assert.match(content, /resource: repo:\/\/README\.md/u);
+});
+
 test("an update is a no-op only with no visible source changes and no Claims debt", async (t) => {
   const root = await fixture(t);
   execFileSync("git", ["config", "user.email", "fixture@example.com"], {

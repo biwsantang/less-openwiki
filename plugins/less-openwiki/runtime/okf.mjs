@@ -451,14 +451,26 @@ function renderLinks(heading, links, includeDescription) {
 function indexMetadata(content) {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1];
   if (!frontmatter) return {};
-  const value = (key) => {
-    const match = new RegExp(`^${key}:\\s*(.+?)\\s*$`, "mu").exec(frontmatter);
-    if (!match) return undefined;
-    const raw = match[1].trim();
-    const unquoted = /^(["'])(.*)\1$/u.exec(raw)?.[2] ?? raw;
-    return unquoted.trim() || undefined;
+  let metadata;
+  try {
+    metadata = parse(`\n${frontmatter}`, {
+      maxAliasCount: 100,
+      schema: "core",
+      uniqueKeys: true,
+    });
+  } catch {
+    return {};
+  }
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
+    return {};
+  const usable = (value) =>
+    typeof value === "string" && value.trim() ? value : undefined;
+  return {
+    ...(usable(metadata.title) ? { title: usable(metadata.title) } : {}),
+    ...(usable(metadata.description)
+      ? { description: usable(metadata.description) }
+      : {}),
   };
-  return { title: value("title"), description: value("description") };
 }
 
 function escapeLabel(value) {
@@ -724,13 +736,11 @@ async function projectClaimSources(root, page, claims) {
       ),
     ),
   ].sort();
-  const sourceLines = resources
-    .map(
-      (resource) =>
-        `  - id: openwiki-source-${hash(resource).slice("sha256:".length, "sha256:".length + 24)}\n    resource: ${resource}`,
-    )
-    .join("\n");
-  const next = replaceClaimSources(content, sourceLines);
+  const projected = resources.map((resource) => ({
+    id: `openwiki-source-${hash(resource).slice("sha256:".length, "sha256:".length + 24)}`,
+    resource,
+  }));
+  const next = replaceClaimSources(content, projected);
   if (next !== content) await writeFile(file, next, "utf8");
 }
 
@@ -738,49 +748,59 @@ async function projectClaimSources(root, page, claims) {
 function replaceClaimSources(content, projected) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
   if (!match) return content;
-  const { retained, withoutSources } = retainAuthoredSources(match[1]);
-  const sources = [...retained, ...(projected ? projected.split("\n") : [])];
-  const frontmatter = [
-    withoutSources.trimEnd(),
-    ...(sources.length ? ["sources:", ...sources] : []),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return content.replace(
-    /^---\r?\n([\s\S]*?)\r?\n---/u,
-    `---\n${frontmatter}\n---`,
+  let metadata;
+  try {
+    metadata = parse(`\n${match[1]}`, {
+      maxAliasCount: 100,
+      schema: "core",
+      uniqueKeys: true,
+    });
+  } catch {
+    return content;
+  }
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
+    return content;
+  const retained = validSourceEntries(metadata.sources).filter(
+    (entry) =>
+      !(
+        typeof entry.id === "string" && entry.id.startsWith("openwiki-source-")
+      ),
+  );
+  return replaceFrontmatterField(
+    content,
+    "sources",
+    renderStructuredList("sources", [...retained, ...projected]),
   );
 }
 
-function retainAuthoredSources(frontmatter) {
-  const lines = frontmatter.split(/\r?\n/u);
-  const start = lines.findIndex((line) => /^sources:\s*(?:#.*)?$/u.test(line));
-  if (start === -1) return { retained: [], withoutSources: frontmatter };
-  let end = start + 1;
-  while (end < lines.length && (lines[end] === "" || /^\s/u.test(lines[end])))
-    end += 1;
-  const entries = [];
-  let entry = [];
-  for (const line of lines.slice(start + 1, end)) {
-    if (/^\s*-\s+/u.test(line) && entry.length) {
-      entries.push(entry);
-      entry = [];
-    }
-    entry.push(line);
+function validSourceEntries(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (source) =>
+      source &&
+      typeof source === "object" &&
+      !Array.isArray(source) &&
+      typeof source.resource === "string" &&
+      source.resource.trim(),
+  );
+}
+
+function replaceFrontmatterField(content, key, replacement) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content);
+  if (!match) return content;
+  const lines = match[1].split(/\r?\n/u);
+  const start = lines.findIndex((line) =>
+    new RegExp(`^${key}:\\s*(?:#.*)?$`, "u").test(line),
+  );
+  const next = [...lines];
+  if (start === -1) next.push(...replacement);
+  else {
+    let end = start + 1;
+    while (end < lines.length && (lines[end] === "" || /^\s/u.test(lines[end])))
+      end += 1;
+    next.splice(start, end - start, ...replacement);
   }
-  if (entry.length) entries.push(entry);
-  const retained = entries
-    .filter(
-      (lines) =>
-        !lines.some((line) =>
-          /^\s*(?:-\s*)?id:\s*["']?openwiki-source-/iu.test(line),
-        ),
-    )
-    .flat();
-  return {
-    retained,
-    withoutSources: [...lines.slice(0, start), ...lines.slice(end)].join("\n"),
-  };
+  return `${content.slice(0, match.index)}---\n${next.join("\n")}\n---\n${content.slice(match.index + match[0].length)}`;
 }
 
 async function directories(root) {
