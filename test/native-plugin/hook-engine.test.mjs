@@ -1574,6 +1574,73 @@ test("an update is a no-op only with no visible source changes and no Claims deb
   );
 });
 
+test("a verified complete legacy update seeds native page manifest coverage", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  const page = path.join(root, "openwiki", "quickstart.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  const pageVersion = hash(await readFile(page));
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion,
+    claims: [
+      {
+        id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+        statement: "The quickstart exists.",
+        evidence: [
+          {
+            resource: "repo://README.md",
+            version: (await resolveRepositoryEvidence(root, "repo://README.md"))
+              .version,
+          },
+        ],
+      },
+    ],
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+  });
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "legacy baseline"], {
+    cwd: root,
+  });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    gitHead: head,
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en",
+  });
+
+  const noop = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+
+  assert.match(noop.hookSpecificOutput.additionalContext, /current/u);
+  await assert.rejects(readFile(path.join(root, "openwiki", ".run.json")));
+  const manifest = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".page-manifest.json")),
+  );
+  assert.equal(manifest.pages["/openwiki/quickstart.md"].gitHead, head);
+  assert.match(
+    manifest.pages["/openwiki/quickstart.md"].sourceFingerprint,
+    /^sha256:/u,
+  );
+});
+
 test("update planning uses every page's manifest baseline, not only the last run", async (t) => {
   const root = await fixture(t);
   execFileSync("git", ["config", "user.email", "fixture@example.com"], {

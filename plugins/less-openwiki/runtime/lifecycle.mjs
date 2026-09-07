@@ -89,6 +89,12 @@ export async function startOrResume(root, input) {
     mode === "init" ? await beginInitWikiReplacement(root) : null;
   try {
     if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
+    if (
+      mode === "update" &&
+      lastUpdate?.status === "complete" &&
+      lastUpdate.gitHead
+    )
+      await seedManifestCoverage(root, existingPages, lastUpdate.gitHead);
     let { pageUpdateWindows, changedPaths, claimIssues, completeCoverage } =
       await updatePlanningState(root, mode, existingPages);
     if (
@@ -1187,6 +1193,25 @@ async function readManifest(root) {
 
 async function hasCompleteManifestCoverage(root, pages) {
   return (await uncoveredManifestPages(root, pages)).length === 0;
+}
+
+/** Seeds missing legacy page coverage only when current Claims prove the page. */
+async function seedManifestCoverage(root, pages, gitHead) {
+  const manifest = await readManifest(root);
+  let changed = false;
+  for (const file of pages) {
+    const page = relative(root, file);
+    const key = `/${page}`;
+    if (manifest.pages[key]) continue;
+    try {
+      const claims = await assertClaimsPageCurrent(root, page);
+      manifest.pages[key] = { gitHead, pageVersion: claims.pageVersion };
+      changed = true;
+    } catch {
+      // Unverifiable legacy pages deliberately remain uncovered for full review.
+    }
+  }
+  if (changed) await writeManifest(root, manifest);
 }
 
 async function fastForwardManifestCoverage(root, pages, source) {

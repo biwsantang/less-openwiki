@@ -82,6 +82,11 @@ On a stable resume, legacy run state that lacks its target Git revision is
 backfilled from the current repository head before page coverage is reconciled.
 Source drift instead replaces the old plan and establishes a new target.
 
+For a completed legacy update that predates the per-page manifest, verified
+current Claims seed missing page entries from the recorded successful Git head.
+Unverifiable pages deliberately remain uncovered and enter the full-review
+queue rather than receiving guessed coverage.
+
 While generating or resuming, the hook also supplies the complete current page
 job: its title, purpose, repository seed paths, related pages, and any planner
 instructions, plus the existing Claim count and any stale or unresolved Claim
