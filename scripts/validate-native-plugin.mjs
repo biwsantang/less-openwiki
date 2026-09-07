@@ -19,6 +19,8 @@ const requiredFiles = [
   path.join(pluginRoot, "runtime", "okf.mjs"),
   path.join(pluginRoot, "runtime", "identity.mjs"),
   path.join(pluginRoot, "runtime", "setup.mjs"),
+  path.join(pluginRoot, "runtime", "target-resolver.mjs"),
+  path.join(pluginRoot, "runtime", "session-binding.mjs"),
   path.join(pluginRoot, "runtime", "vendor", "yaml.mjs"),
   path.join(pluginRoot, "runtime", "vendor", "NOTICE.md"),
   path.join(root, ".agents", "plugins", "marketplace.json"),
@@ -32,8 +34,8 @@ for (const file of requiredFiles) {
 const codexManifest = await readJson(requiredFiles[0]);
 const claudeManifest = await readJson(requiredFiles[1]);
 const hooks = await readJson(requiredFiles[3]);
-const codexMarketplace = await readJson(requiredFiles[14]);
-const claudeMarketplace = await readJson(requiredFiles[15]);
+const codexMarketplace = await readJson(requiredFiles[16]);
+const claudeMarketplace = await readJson(requiredFiles[17]);
 const identity = await import(path.join(pluginRoot, "runtime", "identity.mjs"));
 
 assert(
@@ -53,12 +55,12 @@ assert(
   "Codex manifest must explicitly declare its lifecycle hook package.",
 );
 assert(
-  codexManifest.version === "0.3.0",
-  "Codex manifest version must be 0.3.0.",
+  codexManifest.version === "0.4.0",
+  "Codex manifest version must be 0.4.0.",
 );
 assert(
-  claudeManifest.version === "0.3.0",
-  "Claude manifest version must be 0.3.0.",
+  claudeManifest.version === "0.4.0",
+  "Claude manifest version must be 0.4.0.",
 );
 for (const [host, manifest] of [
   ["Codex", codexManifest],

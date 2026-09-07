@@ -44,8 +44,11 @@ codex plugin add less-openwiki@less-openwiki
 Start a new Codex thread, invoke `$openwiki`, or ask Codex to initialize
 or update repository documentation. Review and trust the plugin hooks when
 Codex asks (or inspect them with `/hooks`); they keep documentation runs durable
-across the full lifecycle. A direct repository task starts the run immediately;
-delegated tasks activate it on their first plan write.
+across the full lifecycle. A direct repository task starts the run immediately.
+Projectless and delegated tasks activate on their first explicit plan-file edit:
+the edit must target that repository's `openwiki/.intents/plan.json`. The hook
+binds the task to that one Git worktree for checkpoints and completion; it never
+guesses a repository from a path mentioned only in a prompt.
 
 ### Claude Code
 

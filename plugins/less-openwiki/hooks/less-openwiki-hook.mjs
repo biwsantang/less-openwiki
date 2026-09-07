@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
 /** Thin Codex/Claude Code event adapter. Repository behavior lives in runtime/. */
-import { repositoryRoot } from "../runtime/storage.mjs";
+import {
+  boundSessionRoot,
+  clearSessionBinding,
+} from "../runtime/session-binding.mjs";
+import {
+  resolveTargetRepository,
+  sessionRepository,
+} from "../runtime/target-resolver.mjs";
 import {
   checkpoint,
   finish,
@@ -15,15 +22,44 @@ const action = process.argv[2] ?? "";
 const input = await readInput();
 
 try {
-  const root = repositoryRoot(input.cwd ?? process.cwd());
+  const target = resolveTargetRepository(input);
+  if (target.error) {
+    if (action === "pre-tool")
+      process.stdout.write(`${JSON.stringify(deny(target.error))}\n`);
+    process.exit(0);
+  }
+  const bound = await boundSessionRoot(input);
+  if (bound && target.root && bound !== target.root) {
+    if (action === "pre-tool")
+      process.stdout.write(
+        `${JSON.stringify(deny("Less OpenWiki already has an active repository for this task. Finish or interrupt that run before targeting another repository."))}\n`,
+      );
+    process.exit(0);
+  }
+  const root = target.root ?? bound ?? sessionRepository(input);
   if (!root) process.exit(0);
   const result = await dispatch(root, input);
+  if (
+    action === "session-end" ||
+    (action === "stop" && result && result.continue !== false)
+  )
+    await clearSessionBinding(input);
   if (result && Object.keys(result).length)
     process.stdout.write(`${JSON.stringify(normalize(result))}\n`);
 } catch (error) {
   process.stdout.write(
     `${JSON.stringify({ systemMessage: `Less OpenWiki: ${error instanceof Error ? error.message.replace(/\s+/gu, " ").slice(0, 500) : "lifecycle operation failed"}` })}\n`,
   );
+}
+
+function deny(permissionDecisionReason) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason,
+    },
+  };
 }
 
 async function dispatch(root, event) {
@@ -49,10 +85,13 @@ async function dispatch(root, event) {
 
 function normalize(result) {
   if (!result.hookSpecificOutput) return result;
-  if (action === "session-start")
-    result.hookSpecificOutput.hookEventName = "SessionStart";
-  else if (action === "post-tool")
-    result.hookSpecificOutput.hookEventName = "PostToolUse";
+  const events = {
+    "session-start": "SessionStart",
+    "user-prompt": "UserPromptSubmit",
+    "pre-tool": "PreToolUse",
+    "post-tool": "PostToolUse",
+  };
+  if (events[action]) result.hookSpecificOutput.hookEventName = events[action];
   return result;
 }
 
