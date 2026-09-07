@@ -29,7 +29,7 @@ jobs:
 
       - name: Generate migration report
         run: |
-          node plugins/less-openwiki/scripts/upstream-docs-report.mjs --base HEAD --upstream upstream/main --output upstream-docs-report.md
+          node scripts/upstream-docs-report.mjs --base HEAD --upstream upstream/main --output upstream-docs-report.md
           cat upstream-docs-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload migration report

@@ -1,64 +1,51 @@
-# Upstream parity and maintenance
+# Upstream repository-wiki migration matrix
 
-Less OpenWiki preserves the repository-documentation workflow as a native
-coding-agent plugin. This matrix is a maintainer aid: it identifies the
-observable documentation behavior that must remain compatible and the native
-component that enforces it.
+Less OpenWiki preserves the useful repository-documentation practices from
+OpenWiki while deliberately removing its executable lifecycle protocol.
 
-| Repository documentation behavior                                                   | Native implementation                                                                       | Regression evidence                                                    |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Start, resume, mode/language conflict checks, and no-change updates                 | Prompt/session hooks with `runtime/lifecycle.mjs`                                           | Lifecycle, language, no-op, and resume cases                           |
-| Focused semantic plans, repository instructions, and ordered page assignments       | Private plan intent plus durable active-job hook context                                    | Plan validation, instruction, and queue-order cases                    |
-| Page checkpointing, Claims reconciliation, and durable per-page coverage            | Post-write hook with `claims.mjs`, `okf.mjs`, and the page manifest                         | Claims, checkpoint, manifest, and proof-recovery cases                 |
-| Repository evidence versions and read boundary                                      | `evidence.mjs` and `.openwikiignore` processing                                             | Whole-file, line-range, traversal, symlink, and ignore cases           |
-| Incremental source review                                                           | Source snapshots and per-page Git baselines in `storage.mjs` and `lifecycle.mjs`            | Source-drift, mixed-baseline, staged/unstaged, and docs-only cases     |
-| OKF repair, provenance, verification, sources, links, Mermaid fallback, and indexes | `okf.mjs`                                                                                   | Structured YAML/OKF, provenance, link, Mermaid, and finalization cases |
-| Abandoned page work                                                                 | `{ "action": "skip" }` private page intent, rollback snapshot, and interrupted finalization | Existing-page and newly-planned-page skip cases                        |
-| Root coding-agent guidance                                                          | Marker-owned `AGENTS.md` and `CLAUDE.md` setup performed before a new run                   | Setup, preservation, malformed-marker, and write-ownership cases       |
-| Projectless task targeting and stale draft recovery                                 | Structured target resolver, temporary session binding, and `repair` lifecycle mode          | Projectless activation, ambiguous-root, and repair-candidate cases     |
-| Codex and Claude Code lifecycle integration                                         | Shared hook adapter plus both plugin manifests and marketplaces                             | Native plugin, Codex, and Claude validation commands                   |
+| Upstream repository-wiki behavior                                       | Skill-only implementation                        | Status                                   |
+| ----------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------- |
+| Repository research and focused semantic taxonomy                       | `SKILL.md` and research reference                | Preserved                                |
+| Page purpose, source paths, related topics, and update review           | In-task plan and ordinary page/source references | Preserved as agent work                  |
+| Page-quality guidance                                                   | Research and authoring reference                 | Preserved                                |
+| Basic OKF-style front matter and navigation                             | Markdown-format reference and `quickstart.md`    | Preserved as plain Markdown              |
+| `INSTRUCTIONS.md`, `.openwikiignore`, root routing blocks               | Maintenance reference                            | Preserved as agent work                  |
+| Initialize, update, reinitialize, and stale-doc repair                  | Maintenance and update instructions              | Preserved as agent work                  |
+| Ordered page queue, run resume, rollback, and automatic finalization    | None                                             | Intentionally removed                    |
+| Claims IDs, evidence versions, sidecars, and stale-Claim reconciliation | Visible source references in Markdown            | Simplified; deterministic Claims removed |
+| Manifest coverage, source snapshots, and formal no-op state             | Git review and explicit completion report        | Simplified; generated metadata removed   |
+| Host lifecycle integration                                              | None                                             | Intentionally removed; no hooks or MCP   |
 
-## Native boundary
+## Explicitly excluded upstream product surfaces
 
-The plugin deliberately uses the host agent's normal prompt and repository
-tools. It does not publish a separate command-line interface, MCP server, or
-background process. Private intents and the bundled runtime are implementation
-details used by required hooks to make the same repository files and lifecycle
-guarantees durable.
+- Standalone CLI and provider/auth configuration.
+- MCP server and host integration installer.
+- Personal knowledge mode and external connectors.
+- Visualizer/export server.
+- Cron and CI documentation updater.
+- OpenCode and Cursor packaging.
 
-The visualizer/export surface is likewise not part of this native
-repository-documentation workflow. Windows portability is outside this fork's
-supported scope; hook commands target POSIX host environments.
+These surfaces are outside the Codex-and-Claude-Code repository skill. Do not
+reintroduce them indirectly through hooks, scripts that create target state, or
+hidden runtime folders.
 
 ## Reviewing upstream changes
-
-Fetch the configured upstream remote, then generate the report from the branch
-being maintained:
 
 ```sh
 git fetch upstream main
 pnpm upstream:docs --base HEAD --upstream upstream/main --output upstream-docs-report.md
 ```
 
-Route each report entry with the matrix above:
-
-| Upstream change area                                                     | Native destination                                                                     |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Documentation behavior, Claims, OKF, source snapshots, or page manifests | `plugins/less-openwiki/runtime/` and `test/native-plugin/`                             |
-| Host-facing workflow or instructions                                     | `skills/openwiki/SKILL.md`, `docs/`, and `README.md`                                   |
-| Hook event contract or packaging                                         | `hooks/`, both manifests, marketplaces, and plugin validation                          |
-| Removed transport or visualization surface                               | Record a maintainer decision here only if it affects repository-documentation behavior |
+Review documentation and generation-behavior groups first. Migrate a relevant
+repository-wiki practice into `SKILL.md` or a narrowly scoped reference. When a
+change depends on an upstream CLI, MCP protocol, generated Claim state, or
+background service, record it as excluded unless the plugin boundary is changed
+deliberately.
 
 After a migration change, run:
 
 ```sh
-pnpm plugin:test
-pnpm format:check
 pnpm plugin:validate
-claude plugin validate plugins/less-openwiki
+pnpm format:check
 pnpm upstream:docs
 ```
-
-The project-local native suite is the behavioral gate. The upstream test
-command includes intentionally absent transport and visualizer components, so
-it is not the native plugin's parity gate.

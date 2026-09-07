@@ -1,33 +1,27 @@
 # Less OpenWiki
 
-Less OpenWiki turns a coding agent into a reliable repository-documentation
-partner for Codex and Claude Code. It researches the repository, writes a
-focused `openwiki/` knowledge base, and maintains durable documentation state
-as the work proceeds.
+Less OpenWiki is a skill-only repository documentation plugin for Codex and
+Claude Code. It helps the coding agent research a repository and create a
+focused, source-grounded Markdown wiki under `wiki/`.
+
+There is no MCP server, public CLI, daemon, required hook, or hidden lifecycle
+state. The wiki remains ordinary repository content that people and agents can
+read and maintain directly.
 
 ## What it does
 
-- Initializes and updates an `openwiki/` documentation map.
-- Starts initialization from a clean generated wiki target while preserving the
-  repository-owned `openwiki/INSTRUCTIONS.md` guidance; a clear initialize or
-  reinitialize request intentionally replaces existing generated pages.
-- Writes focused architecture, workflow, operations, integration, and testing
-  pages rather than a directory-by-directory inventory.
-- Creates a semantic page plan, then runs it as a resumable, ordered queue.
-- Reviews source changes from each page's own saved source baseline, preserving
-  correct incremental updates after partial or resumed runs.
-- Reconciles material Claims against repository evidence, then projects
-  provenance and sources into pages and the page manifest.
-- Detects source drift, preserves validated completed pages while marking their
-  source checkpoint interrupted for reconciliation, rebuilds indexes, and
-  validates pages before completion.
-- Restores a failed page attempt to its pre-run Markdown and Claims snapshot,
-  retaining prior coverage while recording the remaining run as interrupted.
-- Applies the same structured YAML/OKF metadata checks in both supported hosts,
-  including provenance, verification, sources, lifecycle status, and timestamps.
-- Keeps a `quickstart.md` routing page and repository agent instructions
-  current.
-- Produces a reviewable upstream-change report for maintainers.
+- Initializes or updates a focused `wiki/` documentation map.
+- Plans around meaningful architecture, workflows, operations, integrations, and
+  tests instead of mirroring directories.
+- Grounds factual text in current repository source and tests.
+- Maintains plain front matter, navigation, `quickstart.md`, and optional root
+  `AGENTS.md` / `CLAUDE.md` routing blocks.
+- Honors repository-owned `wiki/INSTRUCTIONS.md` and `.openwikiignore`.
+- Repairs stale documentation by reviewing current Markdown and source changes.
+- Produces an upstream migration report for plugin maintainers.
+
+It deliberately does not create `wiki/.run.json`, `.intents/`, `.claims/`,
+`.page-manifest.json`, `.last-update.json`, or `.rollback/`.
 
 ## Install
 
@@ -41,14 +35,8 @@ codex plugin marketplace add .
 codex plugin add less-openwiki@less-openwiki
 ```
 
-Start a new Codex thread, invoke `$openwiki`, or ask Codex to initialize
-or update repository documentation. Review and trust the plugin hooks when
-Codex asks (or inspect them with `/hooks`); they keep documentation runs durable
-across the full lifecycle. A direct repository task starts the run immediately.
-Projectless and delegated tasks activate on their first explicit plan-file edit:
-the edit must target that repository's `openwiki/.intents/plan.json`. The hook
-binds the task to that one Git worktree for checkpoints and completion; it never
-guesses a repository from a path mentioned only in a prompt.
+Start a new repository task and invoke `$openwiki`, or ask Codex to initialize,
+update, or repair the repository documentation.
 
 ### Claude Code
 
@@ -59,8 +47,8 @@ This repository also contains a Claude Code marketplace and plugin manifest.
 /plugin install less-openwiki@less-openwiki
 ```
 
-Invoke `/less-openwiki:openwiki`, or ask Claude Code to initialize or
-update repository documentation.
+Invoke `/less-openwiki:openwiki`, or ask Claude Code to initialize, update, or
+repair repository documentation.
 
 ## Use
 
@@ -69,43 +57,41 @@ Typical prompts are:
 ```text
 Initialize documentation for this repository.
 Update the documentation for the current source changes.
-Resume the interrupted documentation update.
+Review and repair stale pages in wiki/.
 ```
 
-The workflow uses `openwiki/` as its default documentation directory. It
-honors `openwiki/INSTRUCTIONS.md` and `.openwikiignore` when they exist.
-It also refreshes only its marker-owned blocks in root `AGENTS.md` and
-`CLAUDE.md`, preserving all surrounding repository-authored content.
+The skill keeps its plan in the task conversation and writes ordinary Markdown.
+Before it reports completion, it reviews links, source references, navigation,
+and front matter. It reports the evidence reviewed rather than claiming an
+automatic lifecycle or machine-certified no-op.
 
 ## Upstream change review
 
-Fetch upstream and generate a review report whenever maintaining the fork:
+The original OpenWiki project remains the reference for repository-wiki quality,
+not for transport or runtime architecture. Fetch upstream and generate a report
+when maintaining this fork:
 
 ```sh
 git fetch upstream main
 pnpm upstream:docs --base HEAD --upstream upstream/main --output upstream-docs-report.md
 ```
 
-The report classifies incoming work by documentation, generation behavior,
-workflows, tests, runtime adapters, and supporting code. Review it with the
-plugin and carry relevant behavior into the shared skill, lifecycle hooks, or
-engine as appropriate.
-
-Maintainers can use the [upstream parity matrix](docs/upstream-parity.md) to
-map repository behavior to its native implementation and regression coverage.
+Use the [upstream parity matrix](docs/upstream-parity.md) to route relevant
+repository-wiki behavior into the skill or its references. CLI, MCP, personal
+knowledge, connectors, visualizer, and scheduling features are intentionally
+out of scope.
 
 ## Validation and development
 
 ```sh
 pnpm plugin:validate
-pnpm plugin:test
+pnpm format:check
 pnpm upstream:docs
 ```
 
-`plugin:validate` checks the marketplaces, manifests, skill, hook package, and
-repository wiki. `plugin:test` exercises lifecycle checkpointing, source drift,
-Claims sidecars, manifest generation, and finalization. See [native plugin
-architecture](docs/native-plugin.md) for the component model.
+`plugin:validate` checks the marketplaces, manifests, skill-only package shape,
+and the repository's plain Markdown wiki. See the [skill-only architecture](docs/native-plugin.md)
+for the component model.
 
 ## License
 

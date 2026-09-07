@@ -30,7 +30,6 @@ jobs:
       - name: Validate plugin package
         run: |
           pnpm plugin:validate
-          pnpm plugin:test
           pnpm format:check
 
       - name: Publish release summary
@@ -38,5 +37,5 @@ jobs:
           {
             echo "## Less OpenWiki plugin verified"
             echo
-            echo "Codex and Claude Code manifests, shared skill, required hooks, and lifecycle tests passed."
+            echo "Codex and Claude Code manifests, shared skill, and Markdown wiki checks passed."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,6 @@
 # Development
 
-Less OpenWiki is a native coding-agent documentation plugin.
+Less OpenWiki is a skill-only repository documentation plugin.
 
 ## Plugin layout
 
@@ -8,34 +8,32 @@ Less OpenWiki is a native coding-agent documentation plugin.
 - `plugins/less-openwiki/.claude-plugin/plugin.json` is the Claude Code
   manifest.
 - `plugins/less-openwiki/skills/openwiki/SKILL.md` is the shared workflow.
-- `plugins/less-openwiki/hooks/hooks.json` binds host lifecycle events to the
-  shared hook engine.
-- `plugins/less-openwiki/hooks/less-openwiki-hook.mjs` owns deterministic
-  state, validation, Claims sidecars, indexes, provenance, and recovery.
-- `plugins/less-openwiki/scripts/` contains validation and upstream-review
-  tooling.
+- `plugins/less-openwiki/skills/openwiki/references/` contains focused guidance
+  for research, maintenance, and Markdown formatting.
 - `.agents/plugins/marketplace.json` and `.claude-plugin/marketplace.json`
   publish the plugin from this repository.
+- `scripts/validate-wiki.mjs` checks plain wiki structure and front matter.
+- `scripts/upstream-docs-report.mjs` reports upstream changes for maintainers.
 
-Validate the distribution and its lifecycle behavior with:
+Validate the distribution with:
 
 ```sh
 pnpm plugin:validate
-pnpm plugin:test
+pnpm format:check
 ```
 
-## Lifecycle changes
+## Documentation changes
 
-Keep the boundary clear:
+Keep responsibilities direct:
 
-- The skill directs repository research and Markdown authoring.
-- Hooks translate host events into the engine's deterministic actions.
-- The engine writes `openwiki/.run.json`, `.claims`, indexes, manifests,
-  provenance, and update metadata.
+- The skill directs research, planning, writing, and update review.
+- References provide detailed guidance only when the task needs it.
+- Generated output is ordinary Markdown and optional marker-owned routing blocks.
+- The agent reports evidence reviewed; it does not claim hidden lifecycle state,
+  automatic rollback, or a machine-certified no-op.
 
-Update the engine and its regression tests together whenever any lifecycle
-invariant changes. Check both hosts' hook schemas after changing
-`hooks/hooks.json`.
+Do not create `.run.json`, `.intents/`, `.claims/`, `.page-manifest.json`,
+`.last-update.json`, or `.rollback/` beneath a target wiki.
 
 ## Tracking upstream
 
@@ -44,9 +42,10 @@ git fetch upstream main
 pnpm upstream:docs --base HEAD --upstream upstream/main --output upstream-docs-report.md
 ```
 
-Review the report with the shared skill. Route documentation changes to the
-skill and user docs, generation behavior to the engine and tests, workflows to
-CI, and adapter changes to the appropriate host package.
+Review the report with the shared skill. Route repository-wiki behavior into the
+skill, a reference, user documentation, validation, or a deliberate exclusion.
+The upstream CLI, MCP lifecycle, personal knowledge features, connectors,
+visualizer, and scheduler remain reference material rather than plugin targets.
 
-After editing plugin files, run the validation commands and start a new Codex
-or Claude Code session after reinstalling the plugin so the host reloads it.
+After editing plugin files, validate the package and start a new Codex or Claude
+Code session after reinstalling the plugin so the host reloads the skill.
