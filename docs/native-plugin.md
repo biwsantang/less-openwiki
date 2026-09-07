@@ -59,7 +59,10 @@ state (pages, indexes, logs, sidecars, and lifecycle metadata) with a clean
 generation target. The lifecycle takes a private, recoverable backup until the
 new run state and interrupted metadata are durable, and preserves only
 repository-owned `openwiki/INSTRUCTIONS.md` when it is a regular file. This is
-the same reset boundary used by the upstream repository lifecycle.
+the same reset boundary used by the upstream repository lifecycle. Its trimmed
+contents are persisted as the run's repository instructions and repeated in
+planning and active-page hook context, so a resumed host retains the same
+guidance.
 
 Update planning derives a source-review window for each factual page from that
 page's saved manifest Git revision, rather than assuming the most recent wiki

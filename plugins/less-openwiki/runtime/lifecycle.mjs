@@ -57,7 +57,7 @@ export async function sessionContext(root) {
   if (!state) return {};
   if (state.phase === "planning")
     return context(
-      "A documentation run is waiting for its semantic plan. Write the private plan intent before authoring Markdown.",
+      `A documentation run is waiting for its semantic plan. Write the private plan intent before authoring Markdown.${wikiGoalContext(state)}`,
     );
   return context(
     `A documentation run (${state.runId}) is active. ${await activeJobSummary(root, state)}`,
@@ -88,6 +88,7 @@ export async function startOrResume(root, input) {
   const replacement =
     mode === "init" ? await beginInitWikiReplacement(root) : null;
   try {
+    const wikiGoal = await readWikiGoal(root);
     if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
     if (
       mode === "update" &&
@@ -145,6 +146,7 @@ export async function startOrResume(root, input) {
       actor: { producerActor: actorFor(), metadataModel: modelFor(input) },
       previousLastUpdate: lastUpdate,
       ...(lastUpdate?.gitHead ? { baseGitHead: lastUpdate.gitHead } : {}),
+      ...(wikiGoal ? { wikiGoal } : {}),
       ...(String(input.prompt ?? input.user_prompt ?? "").trim()
         ? { planningContext: String(input.prompt ?? input.user_prompt).trim() }
         : {}),
@@ -163,7 +165,7 @@ export async function startOrResume(root, input) {
     });
     await replacement?.commit();
     return context(
-      `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
+      `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.${wikiGoalContext(state)}`,
     );
   } catch (error) {
     await replacement?.rollback();
@@ -309,6 +311,13 @@ function isSkipIntent(intent) {
 async function skipCurrentPage(root, state, current) {
   const snapshot = await skippedPageSnapshot(root, state, current.path);
   await rollbackPage(root, state, current.path);
+  const snapshots = await readSkippedPageSnapshots(root, state);
+  if (!validSnapshotRecords(snapshots))
+    throw new Error("invalid skipped-page rollback state");
+  await writeJson(skippedPageSnapshotsPath(root, state), [
+    ...snapshots.filter((entry) => entry.path !== current.path),
+    snapshot,
+  ]);
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),
     command: state.mode,
@@ -319,12 +328,6 @@ async function skipCurrentPage(root, state, current) {
   });
   current.status = "skipped";
   delete current.completedBy;
-  state.skippedPageSnapshots = [
-    ...(state.skippedPageSnapshots ?? []).filter(
-      (entry) => entry.path !== current.path,
-    ),
-    snapshot,
-  ];
   await writeRun(root, state);
   await rm(pageIntentPath(root, current.path), { force: true });
 }
@@ -479,19 +482,19 @@ async function resumeActiveRun(root, state) {
     state.targetGitHead = source.gitHead;
     changed = true;
   }
-  const resetSkipped = resetSkippedPageJobs(state);
+  const resetSkipped = await resetSkippedPageJobs(root, state);
   const reconciled = await reconcileManifestPageJobs(root, state);
   if (changed || resetSkipped || reconciled) await writeRun(root, state);
   return sessionContext(root);
 }
 
-function resetSkippedPageJobs(state) {
+async function resetSkippedPageJobs(root, state) {
   if (state.phase !== "generating" || !state.plan) return false;
   if (!state.plan.pages.some((page) => page.status === "skipped")) return false;
   state.plan.pages = state.plan.pages.map((page) =>
     page.status === "skipped" ? { ...page, status: "pending" } : page,
   );
-  delete state.skippedPageSnapshots;
+  await rm(skippedPageSnapshotsPath(root, state), { force: true });
   return true;
 }
 
@@ -928,7 +931,6 @@ function validateRun(state) {
     "beforeContentSnapshot",
     "preparedWiki",
     "plan",
-    "skippedPageSnapshots",
   ]);
   if (
     !state ||
@@ -938,24 +940,24 @@ function validateRun(state) {
     !["init", "update"].includes(state.mode) ||
     !["planning", "generating"].includes(state.phase) ||
     !validUpdateMetadata(state.previousLastUpdate) ||
-    typeof state.startedAt !== "string" ||
-    typeof state.language !== "string" ||
+    !nonEmptyString(state.startedAt) ||
+    !nonEmptyString(state.language) ||
     typeof state.languageChanged !== "boolean" ||
-    !stringArray(state.requiredRewritePages) ||
-    !stringArray(state.initialPages) ||
+    !nonEmptyStringArray(state.requiredRewritePages) ||
+    !nonEmptyStringArray(state.initialPages) ||
     typeof state.beforeContentSnapshot !== "string" ||
-    !state.actor?.producerActor ||
-    !state.actor?.metadataModel ||
+    !validActor(state.actor) ||
     !/^sha256:[a-f0-9]{64}$/u.test(state.sourceFingerprint) ||
-    !Array.isArray(state.preparedWiki?.generatedProvenance)
+    !validPreparedWiki(state.preparedWiki) ||
+    !optionalNonEmptyString(state.targetGitHead) ||
+    !optionalNonEmptyString(state.planningContext) ||
+    !optionalNonEmptyString(state.baseGitHead) ||
+    !optionalString(state.wikiGoal)
   )
     throw new Error(
       "invalid OpenWiki .run.json; refusing to discard resumable work",
     );
-  if (
-    (state.plan && !validPlan(state.plan)) ||
-    !validSkippedPageSnapshots(state.skippedPageSnapshots, state.plan)
-  )
+  if (state.plan && !validPlan(state.plan))
     throw new Error("invalid OpenWiki plan state");
 }
 function validUpdateMetadata(value) {
@@ -973,17 +975,64 @@ function validUpdateMetadata(value) {
           "language",
         ].includes(key),
       ) &&
-      typeof value.updatedAt === "string" &&
+      nonEmptyString(value.updatedAt) &&
       ["init", "update"].includes(value.command) &&
-      typeof value.model === "string" &&
+      nonEmptyString(value.model) &&
       ["complete", "interrupted"].includes(value.status) &&
-      (value.gitHead === undefined || typeof value.gitHead === "string") &&
-      (value.language === undefined || typeof value.language === "string"))
+      optionalNonEmptyString(value.gitHead) &&
+      optionalString(value.language))
   );
 }
 function stringArray(value) {
   return (
     Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+function optionalNonEmptyString(value) {
+  return value === undefined || nonEmptyString(value);
+}
+function optionalString(value) {
+  return value === undefined || typeof value === "string";
+}
+function nonEmptyStringArray(value) {
+  return Array.isArray(value) && value.every(nonEmptyString);
+}
+function validActor(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    Object.keys(value).length === 2 &&
+    nonEmptyString(value.producerActor) &&
+    nonEmptyString(value.metadataModel)
+  );
+}
+function validPreparedWiki(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    Object.keys(value).length === 1 &&
+    Array.isArray(value.generatedProvenance) &&
+    value.generatedProvenance.every(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        Object.keys(entry).every((key) =>
+          ["page", "bodyHash", "generated"].includes(key),
+        ) &&
+        nonEmptyString(entry.page) &&
+        nonEmptyString(entry.bodyHash) &&
+        (entry.generated === undefined ||
+          (entry.generated &&
+            typeof entry.generated === "object" &&
+            Object.keys(entry.generated).every((key) =>
+              ["by", "at"].includes(key),
+            ) &&
+            nonEmptyString(entry.generated.by) &&
+            optionalNonEmptyString(entry.generated.at))),
+    )
   );
 }
 function validPlan(value) {
@@ -1011,21 +1060,24 @@ function validPlan(value) {
           ].includes(key),
         ) &&
         isUuid(page.id) &&
-        typeof page.path === "string" &&
-        typeof page.title === "string" &&
-        typeof page.purpose === "string" &&
+        nonEmptyString(page.path) &&
+        nonEmptyString(page.title) &&
+        nonEmptyString(page.purpose) &&
         stringArray(page.seedPaths) &&
         stringArray(page.relatedPages) &&
-        stringArray(page.instructions) &&
+        nonEmptyStringArray(page.instructions) &&
         ["pending", "skipped", "complete"].includes(page.status) &&
-        (page.completedBy === undefined ||
-          typeof page.completedBy === "string"),
+        optionalNonEmptyString(page.completedBy),
     )
   );
 }
-function validSkippedPageSnapshots(value, plan) {
-  if (value === undefined) return true;
+function validSnapshotRecords(value, plan) {
   if (!Array.isArray(value)) return false;
+  if (plan === undefined)
+    return (
+      value.length === 0 &&
+      new Set(value.map((snapshot) => snapshot.path)).size === value.length
+    );
   const skipped = new Set(
     plan?.pages
       .filter((page) => page.status === "skipped")
@@ -1050,13 +1102,10 @@ function validSkippedPageSnapshots(value, plan) {
 }
 async function hasDurableSkippedSnapshots(root, state, skippedPages) {
   if (skippedPages.size === 0) return true;
-  if (
-    state.skippedPageSnapshots === undefined ||
-    !validSkippedPageSnapshots(state.skippedPageSnapshots, state.plan)
-  )
-    return false;
+  const snapshots = await readSkippedPageSnapshots(root, state);
+  if (!validSnapshotRecords(snapshots, state.plan)) return false;
   return Promise.all(
-    state.skippedPageSnapshots.map(async (snapshot) => {
+    snapshots.map(async (snapshot) => {
       const expected = await skippedPageSnapshot(root, state, snapshot.path);
       return (
         snapshot.markdown === expected.markdown &&
@@ -1089,6 +1138,7 @@ function pendingSummary(state) {
     `Research seed paths: ${current.seedPaths.length ? current.seedPaths.join(", ") : "none specified"}.`,
     `Related pages: ${current.relatedPages.length ? current.relatedPages.join(", ") : "none specified"}.`,
     `Instructions: ${current.instructions.length ? current.instructions.join(" | ") : "none specified"}.`,
+    ...(state.wikiGoal ? [`Repository instructions: ${state.wikiGoal}`] : []),
     `${pending.length - 1} page(s) remain after it.`,
   ];
   return details.join(" ");
@@ -1109,6 +1159,15 @@ async function activeJobSummary(root, state) {
 
 function contextSentence(label, value) {
   return `${label}: ${value}${/[.!?]$/u.test(value) ? "" : "."}`;
+}
+function wikiGoalContext(state) {
+  return state.wikiGoal ? ` Repository instructions: ${state.wikiGoal}` : "";
+}
+async function readWikiGoal(root) {
+  const file = path.join(root, "openwiki", "INSTRUCTIONS.md");
+  if (!(await isFile(file))) return undefined;
+  const goal = (await readFile(file, "utf8")).trim();
+  return goal || undefined;
 }
 async function readLastUpdate(root) {
   const value = await readJson(lastUpdatePath(root));
@@ -1213,6 +1272,13 @@ async function skippedPageSnapshot(root, state, page) {
       ),
     ),
   };
+}
+function skippedPageSnapshotsPath(root, state) {
+  return path.join(rollbackRoot(root, state.runId), ".skipped.json");
+}
+async function readSkippedPageSnapshots(root, state) {
+  const snapshots = await readJson(skippedPageSnapshotsPath(root, state));
+  return snapshots ?? [];
 }
 async function validatePage(root, page) {
   const file = path.join(root, page);

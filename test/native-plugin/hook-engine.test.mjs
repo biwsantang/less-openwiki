@@ -311,12 +311,17 @@ test("initialization replaces stale generated wiki state but preserves instructi
   });
 
   assert.match(started.hookSpecificOutput.additionalContext, /started/u);
+  assert.match(
+    started.hookSpecificOutput.additionalContext,
+    /Repository instructions: Keep deployment guidance concise\./u,
+  );
   const state = JSON.parse(
     await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
   );
   assert.equal(state.mode, "init");
   assert.deepEqual(state.initialPages, []);
   assert.equal(state.previousLastUpdate.model, "openwiki/old");
+  assert.equal(state.wikiGoal, "Keep deployment guidance concise.");
   assert.equal(
     await readFile(path.join(root, "openwiki", "INSTRUCTIONS.md"), "utf8"),
     "Keep deployment guidance concise.\n",
@@ -433,9 +438,24 @@ test("a native skip restores page and Claims snapshots while preserving prior co
       .plan.pages[0].status,
     "skipped",
   );
-  assert.deepEqual(
+  assert.equal(
     JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
       .skippedPageSnapshots,
+    undefined,
+  );
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          "openwiki",
+          ".rollback",
+          acceptedState.runId,
+          ".skipped.json",
+        ),
+        "utf8",
+      ),
+    ),
     [{ path: "openwiki/quickstart.md", markdown: true, claims: true }],
   );
 
@@ -513,9 +533,22 @@ test("a native skip removes a newly planned page that had no pre-run snapshot", 
   const skippedState = JSON.parse(
     await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
   );
-  assert.deepEqual(skippedState.skippedPageSnapshots, [
-    { path: "openwiki/quickstart.md", markdown: false, claims: false },
-  ]);
+  assert.equal(skippedState.skippedPageSnapshots, undefined);
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          "openwiki",
+          ".rollback",
+          skippedState.runId,
+          ".skipped.json",
+        ),
+        "utf8",
+      ),
+    ),
+    [{ path: "openwiki/quickstart.md", markdown: false, claims: false }],
+  );
   await assert.rejects(readFile(page, "utf8"));
 
   invoke(root, "stop", { hook_event_name: "Stop", cwd: root });
@@ -662,6 +695,25 @@ test("native run requests validate language before durable state and reject resu
       .language,
     "ko",
   );
+});
+
+test("native run state rejects malformed optional upstream fields", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  const runFile = path.join(root, "openwiki", ".run.json");
+  const state = JSON.parse(await readFile(runFile, "utf8"));
+  state.wikiGoal = { unexpected: true };
+  await writeJson(runFile, state);
+
+  const resumed = invoke(root, "session-start", {
+    hook_event_name: "SessionStart",
+    cwd: root,
+  });
+  assert.match(resumed.systemMessage, /invalid OpenWiki \.run\.json/u);
 });
 
 test("a changed documentation language adds every omitted factual page to the plan", async (t) => {
