@@ -28,7 +28,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "apply_patch|Edit|Write|Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
@@ -41,7 +41,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "apply_patch|Edit|Write|Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",

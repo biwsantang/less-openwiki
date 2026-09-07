@@ -65,6 +65,12 @@ for (const event of [
     `Hook package must wire ${event} to the shared engine.`,
   );
 }
+for (const event of ["PreToolUse", "PostToolUse"]) {
+  assert(
+    hooks.hooks?.[event]?.[0]?.matcher === "*",
+    `Hook package must route every ${event} tool event to the shared engine.`,
+  );
+}
 assert(
   codexMarketplace.plugins?.[0]?.source?.path === "./plugins/less-openwiki",
   "Codex marketplace must point at the plugin.",
