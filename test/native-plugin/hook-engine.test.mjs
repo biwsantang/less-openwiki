@@ -162,7 +162,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     assert.match(result.hookSpecificOutput.additionalContext, /Recorded/u);
     assert.match(
       await readFile(absolute, "utf8"),
-      /verified:\n\s+- by: openwiki\/0\.4\.0/u,
+      /verified:\n\s+- by: openwiki\/0\.4\.1/u,
     );
     const checkpointManifest = JSON.parse(
       await readFile(
@@ -224,7 +224,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.match(quickstart, new RegExp(`at: ${startedAt}`, "u"));
   assert.match(
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
-    /verified:\n\s+- by: openwiki\/0\.4\.0/u,
+    /verified:\n\s+- by: openwiki\/0\.4\.1/u,
   );
   assert.equal(
     await readFile(path.join(root, "openwiki", "index.md"), "utf8"),
@@ -348,6 +348,90 @@ test("projectless activation preserves unowned intents as repair candidates", as
       ),
     ),
     { pages: [] },
+  );
+});
+
+test("a projectless checkpoint reuses the pre-write target when Codex omits it after the write", async (t) => {
+  const root = await fixture(t);
+  const projectless = await mkdtemp(
+    path.join(os.tmpdir(), "less-openwiki-projectless-"),
+  );
+  t.after(() => rm(projectless, { recursive: true, force: true }));
+  const sessionId = "projectless-missing-post-target";
+  const wiki = "open" + "wiki";
+  const planFile = path.join(root, wiki, ".intents", "plan.json");
+
+  invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: planFile },
+  });
+  await writeJson(planFile, {
+    pages: [
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Route contributors.",
+      },
+    ],
+  });
+  const plan = invoke(projectless, "post-tool", {
+    hook_event_name: "PostToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: {},
+  });
+  assert.match(plan.hookSpecificOutput.additionalContext, /accepted/u);
+
+  const page = path.join(root, wiki, "quickstart.md");
+  const intent = path.join(root, wiki, ".intents", "quickstart.json");
+  invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: intent },
+  });
+  await writeIntent(root, `${wiki}/quickstart.md`, "README.md");
+  assert.deepEqual(
+    invoke(projectless, "post-tool", {
+      hook_event_name: "PostToolUse",
+      session_id: sessionId,
+      cwd: projectless,
+      tool_name: "apply_patch",
+      tool_input: {},
+    }),
+    {},
+  );
+
+  invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: page },
+  });
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Fixture documentation.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  const checkpoint = invoke(projectless, "post-tool", {
+    hook_event_name: "PostToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: {},
+  });
+  assert.match(checkpoint.hookSpecificOutput.additionalContext, /Recorded/u);
+  await assert.rejects(readFile(intent, "utf8"));
+  assert.ok(
+    JSON.parse(
+      await readFile(path.join(root, wiki, ".page-manifest.json"), "utf8"),
+    ).pages[`/${wiki}/quickstart.md`],
   );
 });
 
@@ -2572,7 +2656,7 @@ test("a resumed run recovers a checkpointed page from durable manifest coverage"
   );
   const recovered = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(recovered.plan.pages[0].status, "complete");
-  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.4.0");
+  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.4.1");
 });
 
 test("a resume rejects completed native work that lost its durable Claims proof", async (t) => {

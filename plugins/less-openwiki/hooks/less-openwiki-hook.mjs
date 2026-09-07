@@ -4,6 +4,8 @@
 import {
   boundSessionRoot,
   clearSessionBinding,
+  consumeSessionTargets,
+  recordSessionTargets,
 } from "../runtime/session-binding.mjs";
 import {
   resolveTargetRepository,
@@ -38,7 +40,24 @@ try {
   }
   const root = target.root ?? bound ?? sessionRepository(input);
   if (!root) process.exit(0);
-  const result = await dispatch(root, input);
+  const deferredTargets =
+    action === "post-tool" && target.targets.length === 0
+      ? await consumeSessionTargets(input)
+      : [];
+  if (action === "post-tool" && target.targets.length > 0)
+    await consumeSessionTargets(input);
+  const event = deferredTargets.length
+    ? {
+        ...input,
+        tool_input: {
+          ...(input.tool_input ?? input.toolInput ?? {}),
+          file_path: deferredTargets[0],
+        },
+      }
+    : input;
+  const result = await dispatch(root, event);
+  if (action === "pre-tool" && target.targets.length > 0)
+    await recordSessionTargets(input, target.targets);
   if (
     action === "session-end" ||
     (action === "stop" && result && result.continue !== false)

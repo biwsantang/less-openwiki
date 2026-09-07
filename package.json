@@ -1,6 +1,6 @@
 {
   "name": "less-openwiki",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A durable native Codex and Claude Code repository documentation plugin.",
   "private": true,
   "license": "MIT",
