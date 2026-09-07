@@ -1,4 +1,4 @@
-# Contributing to OpenWiki
+# Contributing to Less OpenWiki
 
 Thanks for contributing! Our standard for PR contributions is **one PR = one change**.
 This allows us to keep reviews fast and the repo history clean.
@@ -40,7 +40,7 @@ Install an integration backed by the current checkout with:
 pnpm integrations:dev <codex|claude|opencode|cursor>
 ```
 
-The command builds OpenWiki, refreshes the host skill, and records absolute
+The command builds Less OpenWiki, refreshes the host skill, and records absolute
 paths to the current Node executable and `dist/cli/cli.js`. Restart the coding
 agent after installation. Codex, Claude Code, OpenCode, and Cursor install at
 user scope. Later source changes only require `pnpm build` unless the bundled
@@ -54,12 +54,12 @@ supported platform), and Cursor under `~/.cursor`.
 
 ## Adding a coding-agent integration
 
-OpenWiki host integrations share one canonical skill and five MCP tools:
+Less OpenWiki host integrations share one canonical skill and five MCP tools:
 `openwiki_begin`, `openwiki_submit_plan`, `openwiki_next_page`,
 `openwiki_submit_page`, and `openwiki_finish`. Add host-specific behavior to the
 registry and config boundary rather than copying the skill or adding
 host-specific tools. The host model researches and authors only the current
-OpenWiki PageJob; OpenWiki owns durable run state, Claims reconciliation,
+Less OpenWiki PageJob; Less OpenWiki owns durable run state, Claims reconciliation,
 finalization, metadata, provenance, and managed setup files.
 
 1. Confirm the host discovers repository skills and local stdio MCP servers.
@@ -81,7 +81,7 @@ finalization, metadata, provenance, and managed setup files.
    support.
 
 Keep the v1 boundary narrow: host agents use their native repository tools for
-investigation and Markdown authoring; OpenWiki owns deterministic preparation,
+investigation and Markdown authoring; Less OpenWiki owns deterministic preparation,
 finalization, metadata, provenance, and managed setup files.
 
 If your change should ship in a release, also add a changeset (see below).

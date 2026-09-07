@@ -24,7 +24,7 @@ pnpm run build
 pnpm link --global
 ```
 
-Run a dry test from the repo you want OpenWiki to inspect:
+Run a dry test from the repo you want Less OpenWiki to inspect:
 
 ```sh
 cd /path/to/target/repo
@@ -52,7 +52,7 @@ alias openwiki='node /path/to/openwiki/dist/cli/cli.js'
 
 That alias can go in `~/.zshrc` if you want it to persist.
 
-After changing OpenWiki source code, rebuild from this package directory:
+After changing Less OpenWiki source code, rebuild from this package directory:
 
 ```sh
 pnpm run build
