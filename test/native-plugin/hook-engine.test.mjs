@@ -132,10 +132,18 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     );
     assert.ok(checkpointManifest.pages[`/${page}`]);
   }
+  await writeFile(
+    path.join(root, "openwiki", "abandoned.md"),
+    "---\ntype: concept\ntitle: Abandoned\n---\n\n# Abandoned\n",
+    "utf8",
+  );
 
   const final = invoke(root, "stop", { hook_event_name: "Stop", cwd: root });
   assert.match(final.systemMessage, /complete/u);
   await assert.rejects(readFile(runFile, "utf8"));
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", "abandoned.md"), "utf8"),
+  );
   const claims = JSON.parse(
     await readFile(
       path.join(root, "openwiki", ".claims", "quickstart.json"),

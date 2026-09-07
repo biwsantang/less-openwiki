@@ -245,6 +245,7 @@ export async function finish(root) {
     };
   const sourceChangedBeforeFinish =
     (await sourceSnapshot(root)).fingerprint !== state.sourceFingerprint;
+  await removeAbandonedGeneratedPages(root, state);
   for (const page of state.plan.deletePages) {
     await rm(path.join(root, page), { force: true });
     await removeClaims(root, page);
@@ -291,6 +292,17 @@ export async function finish(root) {
       ? "Less OpenWiki documentation run is finalized, but repository source changed during the run. Run an update to reconcile it."
       : "Less OpenWiki documentation run is complete and validated.",
   };
+}
+
+async function removeAbandonedGeneratedPages(root, state) {
+  const initial = new Set(state.initialPages.map((page) => page.slice(1)));
+  const planned = new Set(state.plan.pages.map(({ path: page }) => page));
+  for (const file of await factualPages(root)) {
+    const page = relative(root, file);
+    if (initial.has(page) || planned.has(page)) continue;
+    await rm(file, { force: true });
+    await removeClaims(root, page);
+  }
 }
 
 export async function interrupt(root) {
