@@ -8,6 +8,9 @@ as the work proceeds.
 ## What it does
 
 - Initializes and updates an `openwiki/` documentation map.
+- Starts initialization from a clean generated wiki target while preserving the
+  repository-owned `openwiki/INSTRUCTIONS.md` guidance; a clear initialize or
+  reinitialize request intentionally replaces existing generated pages.
 - Writes focused architecture, workflow, operations, integration, and testing
   pages rather than a directory-by-directory inventory.
 - Creates a semantic page plan, then runs it as a resumable, ordered queue.

@@ -229,6 +229,73 @@ test("the native hook runs from an isolated plugin package", async (t) => {
   await readFile(path.join(root, "openwiki", ".run.json"), "utf8");
 });
 
+test("initialization replaces stale generated wiki state but preserves instructions", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "INSTRUCTIONS.md"),
+    "Keep deployment guidance concise.\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(root, "openwiki", "index.md"),
+    "# Stale index\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(root, "openwiki", "log.md"),
+    "# Stale log\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(root, "openwiki", "legacy.md"),
+    "---\ntype: concept\ntitle: Legacy\n---\n\n# Legacy\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "stale.json"), {
+    schemaVersion: 1,
+  });
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    command: "init",
+    model: "openwiki/old",
+    status: "complete",
+  });
+
+  const started = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Initialize project documentation as a wiki.",
+  });
+
+  assert.match(started.hookSpecificOutput.additionalContext, /started/u);
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(state.mode, "init");
+  assert.deepEqual(state.initialPages, []);
+  assert.equal(state.previousLastUpdate.model, "openwiki/old");
+  assert.equal(
+    await readFile(path.join(root, "openwiki", "INSTRUCTIONS.md"), "utf8"),
+    "Keep deployment guidance concise.\n",
+  );
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", "index.md"), "utf8"),
+  );
+  await assert.rejects(readFile(path.join(root, "openwiki", "log.md"), "utf8"));
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", "legacy.md"), "utf8"),
+  );
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", ".claims", "stale.json"), "utf8"),
+  );
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".last-update.json")))
+      .status,
+    "interrupted",
+  );
+});
+
 test("repository evidence uses upstream V1 whole-file and relocating line-range versions", async (t) => {
   const root = await fixture(t);
   await writeFile(

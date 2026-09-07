@@ -54,6 +54,13 @@ adds work required to reconcile stale Claims and to complete a language rewrite.
 They are removed at checkpoints and never become documentation output. The
 skill does not edit durable lifecycle files directly.
 
+An explicit initialize or reinitialize request replaces existing generated wiki
+state (pages, indexes, logs, sidecars, and lifecycle metadata) with a clean
+generation target. The lifecycle takes a private, recoverable backup until the
+new run state and interrupted metadata are durable, and preserves only
+repository-owned `openwiki/INSTRUCTIONS.md` when it is a regular file. This is
+the same reset boundary used by the upstream repository lifecycle.
+
 Update planning derives a source-review window for each factual page from that
 page's saved manifest Git revision, rather than assuming the most recent wiki
 run covered every page. The hook provides those grouped windows in its planning

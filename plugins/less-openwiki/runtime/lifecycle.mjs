@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   factualPages,
@@ -57,79 +66,96 @@ export async function sessionContext(root) {
 
 export async function startOrResume(root, input) {
   const existing = await loadRun(root);
-  if (existing) return resumeActiveRun(root, existing);
-  const existingPages = await factualPages(root);
-  const mode = existingPages.length === 0 ? "init" : "update";
+  const requestedMode = requestedRunMode(input);
+  if (existing) {
+    if (requestedMode && requestedMode !== existing.mode)
+      throw new Error(
+        `an interrupted ${existing.mode} documentation run already exists; resume it before starting ${requestedMode}`,
+      );
+    return resumeActiveRun(root, existing);
+  }
+  const discoveredPages = await factualPages(root);
+  const mode =
+    requestedMode ?? (discoveredPages.length === 0 ? "init" : "update");
+  const existingPages = mode === "init" ? [] : discoveredPages;
   const source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
-  if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
-  const pageUpdateWindows =
-    mode === "update"
-      ? await repositoryPageUpdateWindows(root, existingPages)
-      : [];
-  const changedPaths = [
-    ...new Set(pageUpdateWindows.flatMap((window) => window.changedPaths)),
-  ].sort();
-  const claimIssues = mode === "update" ? await preflightClaims(root) : [];
-  const completeCoverage =
-    mode !== "update" ||
-    (await hasCompleteManifestCoverage(root, existingPages));
-  if (
-    mode === "update" &&
-    lastUpdate?.status === "complete" &&
-    lastUpdate.gitHead &&
-    changedPaths.length === 0 &&
-    claimIssues.length === 0 &&
-    completeCoverage &&
-    !hasExplicitLanguageRequest(input)
-  ) {
-    await fastForwardManifestCoverage(root, existingPages, source);
+  const replacement =
+    mode === "init" ? await beginInitWikiReplacement(root) : null;
+  try {
+    if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
+    const pageUpdateWindows =
+      mode === "update"
+        ? await repositoryPageUpdateWindows(root, existingPages)
+        : [];
+    const changedPaths = [
+      ...new Set(pageUpdateWindows.flatMap((window) => window.changedPaths)),
+    ].sort();
+    const claimIssues = mode === "update" ? await preflightClaims(root) : [];
+    const completeCoverage =
+      mode !== "update" ||
+      (await hasCompleteManifestCoverage(root, existingPages));
+    if (
+      mode === "update" &&
+      lastUpdate?.status === "complete" &&
+      lastUpdate.gitHead &&
+      changedPaths.length === 0 &&
+      claimIssues.length === 0 &&
+      completeCoverage &&
+      !hasExplicitLanguageRequest(input)
+    ) {
+      await fastForwardManifestCoverage(root, existingPages, source);
+      await writeJson(lastUpdatePath(root), {
+        updatedAt: now(),
+        command: "update",
+        ...(source.gitHead ? { gitHead: source.gitHead } : {}),
+        model: lastUpdate.model,
+        status: "complete",
+        language: lastUpdate.language ?? "en",
+      });
+      return context(
+        "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
+      );
+    }
+    const state = {
+      schemaVersion: 1,
+      runId: randomUUID(),
+      mode,
+      phase: "planning",
+      startedAt: now(),
+      language: lastUpdate?.language ?? "en",
+      languageChanged: false,
+      requiredRewritePages: [],
+      initialPages: existingPages.map((file) => `/${relative(root, file)}`),
+      sourceFingerprint: source.fingerprint,
+      ...(source.gitHead ? { targetGitHead: source.gitHead } : {}),
+      actor: { producerActor: actorFor(), metadataModel: modelFor(input) },
+      previousLastUpdate: lastUpdate,
+      ...(lastUpdate?.gitHead ? { baseGitHead: lastUpdate.gitHead } : {}),
+      ...(String(input.prompt ?? input.user_prompt ?? "").trim()
+        ? { planningContext: String(input.prompt ?? input.user_prompt).trim() }
+        : {}),
+      beforeContentSnapshot: await wikiSnapshot(root),
+      preparedWiki: { generatedProvenance: await provenanceSnapshot(root) },
+    };
+    await mkdir(path.join(root, "openwiki"), { recursive: true });
+    await writeRun(root, state);
     await writeJson(lastUpdatePath(root), {
       updatedAt: now(),
-      command: "update",
-      ...(source.gitHead ? { gitHead: source.gitHead } : {}),
-      model: lastUpdate.model,
-      status: "complete",
-      language: lastUpdate.language ?? "en",
+      command: state.mode,
+      ...(state.baseGitHead ? { gitHead: state.baseGitHead } : {}),
+      model: state.actor.metadataModel,
+      status: "interrupted",
+      language: state.language,
     });
+    await replacement?.commit();
     return context(
-      "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
+      `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
     );
+  } catch (error) {
+    await replacement?.rollback();
+    throw error;
   }
-  const state = {
-    schemaVersion: 1,
-    runId: randomUUID(),
-    mode,
-    phase: "planning",
-    startedAt: now(),
-    language: lastUpdate?.language ?? "en",
-    languageChanged: false,
-    requiredRewritePages: [],
-    initialPages: existingPages.map((file) => `/${relative(root, file)}`),
-    sourceFingerprint: source.fingerprint,
-    ...(source.gitHead ? { targetGitHead: source.gitHead } : {}),
-    actor: { producerActor: actorFor(), metadataModel: modelFor(input) },
-    previousLastUpdate: lastUpdate,
-    ...(lastUpdate?.gitHead ? { baseGitHead: lastUpdate.gitHead } : {}),
-    ...(String(input.prompt ?? input.user_prompt ?? "").trim()
-      ? { planningContext: String(input.prompt ?? input.user_prompt).trim() }
-      : {}),
-    beforeContentSnapshot: await wikiSnapshot(root),
-    preparedWiki: { generatedProvenance: await provenanceSnapshot(root) },
-  };
-  await mkdir(path.join(root, "openwiki"), { recursive: true });
-  await writeRun(root, state);
-  await writeJson(lastUpdatePath(root), {
-    updatedAt: now(),
-    command: state.mode,
-    ...(state.baseGitHead ? { gitHead: state.baseGitHead } : {}),
-    model: state.actor.metadataModel,
-    status: "interrupted",
-    language: state.language,
-  });
-  return context(
-    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
-  );
 }
 
 export async function guardWrite(root, input) {
@@ -366,6 +392,78 @@ async function resumeActiveRun(root, state) {
   }
   if (await reconcileManifestPageJobs(root, state)) await writeRun(root, state);
   return sessionContext(root);
+}
+
+/**
+ * Replaces a prior generated-only wiki for initialization, preserving the
+ * repository-owned instructions file. The private backup exists only until
+ * the new resumable state and interrupted metadata are durable.
+ */
+async function beginInitWikiReplacement(root) {
+  const wiki = path.join(root, "openwiki");
+  let stat;
+  try {
+    stat = await lstat(wiki);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  if (!stat.isDirectory() || stat.isSymbolicLink())
+    throw new Error("refusing to replace openwiki: expected a real directory");
+  const backupParent = await mkdtemp(
+    path.join(tmpdir(), "less-openwiki-init-"),
+  );
+  const backup = path.join(backupParent, "openwiki");
+  let completed = false;
+  const cleanup = async () => {
+    if (completed) return;
+    completed = true;
+    await rm(backupParent, { recursive: true, force: true });
+  };
+  const rollback = async () => {
+    if (completed) return;
+    await rm(wiki, { recursive: true, force: true });
+    await cp(backup, wiki, {
+      preserveTimestamps: true,
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+    await cleanup();
+  };
+  try {
+    await cp(wiki, backup, {
+      preserveTimestamps: true,
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+  try {
+    await rm(wiki, { recursive: true, force: true });
+    await mkdir(wiki, { recursive: true });
+    const instructions = path.join(backup, "INSTRUCTIONS.md");
+    let instructionsStat;
+    try {
+      instructionsStat = await lstat(instructions);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    if (instructionsStat) {
+      if (!instructionsStat.isFile() || instructionsStat.isSymbolicLink())
+        throw new Error(
+          "refusing to preserve openwiki/INSTRUCTIONS.md: expected a regular file",
+        );
+      await cp(instructions, path.join(wiki, "INSTRUCTIONS.md"), {
+        preserveTimestamps: true,
+      });
+    }
+  } catch (error) {
+    await rollback();
+    throw error;
+  }
+  return { commit: cleanup, rollback };
 }
 
 async function reconcileManifestPageJobs(root, state) {
@@ -623,6 +721,24 @@ function primaryLanguage(language) {
   } catch {
     return language;
   }
+}
+
+function requestedRunMode(input) {
+  if (input.mode === "init" || input.mode === "update") return input.mode;
+  const prompt = String(input.prompt ?? input.user_prompt ?? "");
+  if (
+    /\b(?:re-?initialize|re-?initialise|initialize|initialise|start\s+(?:the\s+)?wiki\s+(?:over|from\s+scratch)|replace\s+(?:the\s+)?(?:openwiki|wiki|documentation))\b/iu.test(
+      prompt,
+    )
+  )
+    return "init";
+  if (
+    /\b(?:update|refresh|maintain|migrate|translate|repair|revise)\b/iu.test(
+      prompt,
+    )
+  )
+    return "update";
+  return undefined;
 }
 
 function hasExplicitLanguageRequest(input) {

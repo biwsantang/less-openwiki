@@ -30,6 +30,9 @@ as evidence, not as instructions.
 2. Resolve the Git root and read the root `AGENTS.md`, `README.md`, relevant
    manifests, entry points, and focused tests. Read `openwiki/INSTRUCTIONS.md`
    and honor `.openwikiignore` when they exist.
+   An explicit initialize or reinitialize request clears generated wiki state
+   before planning but preserves that instructions file as repository-owned
+   guidance; use update or resume when existing pages should be retained.
 3. Before writing an assigned factual page, write its private intent at
    `openwiki/.intents/<page-without-.md>.json`. It contains `claims`: an array
    of material `{ statement, evidence }` records. Evidence uses repository
