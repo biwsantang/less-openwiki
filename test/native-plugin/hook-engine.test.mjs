@@ -126,6 +126,10 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
       tool_input: { file_path: page },
     });
     assert.match(result.hookSpecificOutput.additionalContext, /Recorded/u);
+    assert.match(
+      await readFile(absolute, "utf8"),
+      /verified:\n\s+- by: openwiki\/0\.5\.0/u,
+    );
     const checkpointManifest = JSON.parse(
       await readFile(
         path.join(root, "openwiki", ".page-manifest.json"),

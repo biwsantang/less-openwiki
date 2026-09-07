@@ -222,6 +222,7 @@ export async function checkpoint(root, input) {
     claims,
     state.startedAt,
   );
+  await synchronizeClaimsVerification(root);
   await refreshClaimsPageVersion(root, current.path);
   await recordManifestPageCompletion(root, current.path, state);
   current.status = "complete";
