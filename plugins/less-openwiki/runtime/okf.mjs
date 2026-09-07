@@ -623,34 +623,15 @@ async function degradeInvalidMermaid(root) {
   for (const file of await markdownFiles(path.join(root, "openwiki"))) {
     const original = await readFile(file, "utf8");
     const lines = original.split("\n");
-    const changes = [];
-    for (let index = 0; index < lines.length; index += 1) {
-      const open = /^(\s*)(`{3,})\s*mermaid\s*$/iu.exec(lines[index]);
-      if (!open) continue;
-      let close = index + 1;
-      while (
-        close < lines.length &&
-        !new RegExp(`^${open[1]}${open[2]}\\s*$`).test(lines[close])
-      )
-        close += 1;
-      if (close >= lines.length) continue;
-      const body = lines.slice(index + 1, close).join("\n");
-      if (mermaidError(body))
-        changes.push({
-          open: index,
-          close,
-          indent: open[1],
-          marker: open[2],
-          body,
-        });
-      index = close;
-    }
+    const changes = extractMermaidFences(original)
+      .map((fence) => ({ ...fence, error: mermaidHeuristicError(fence.body) }))
+      .filter(({ error }) => error !== undefined);
     if (changes.length === 0) continue;
     for (const change of changes.reverse())
       lines.splice(
-        change.open,
-        change.close - change.open + 1,
-        `${change.indent}<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. -->`,
+        change.openLine,
+        change.closeLine - change.openLine + 1,
+        `${change.indent}<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: ${change.error} -->`,
         `${change.indent}${change.marker}text`,
         ...change.body.split("\n"),
         `${change.indent}${change.marker}`,
@@ -659,15 +640,55 @@ async function degradeInvalidMermaid(root) {
   }
 }
 
-function mermaidError(body) {
-  const first = body.trim().split(/\s+/u)[0]?.toLowerCase();
+function extractMermaidFences(markdown) {
+  const lines = markdown.split("\n");
+  const fences = [];
+  let open;
+  let genericMarker;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const match = /^(\s*)(`{3,})\s*(\S*)\s*$/u.exec(line);
+    if (open) {
+      if (match && match[2].length >= open.marker.length && !match[3]) {
+        fences.push({
+          ...open,
+          body: open.bodyLines.join("\n"),
+          closeLine: index,
+        });
+        open = undefined;
+      } else open.bodyLines.push(line);
+      continue;
+    }
+    if (genericMarker) {
+      if (match && match[2].length >= genericMarker.length && !match[3])
+        genericMarker = undefined;
+      continue;
+    }
+    if (match && match[3].toLowerCase() === "mermaid")
+      open = {
+        bodyLines: [],
+        indent: match[1],
+        marker: match[2],
+        openLine: index,
+      };
+    else if (match && match[3]) genericMarker = match[2];
+  }
+  return fences;
+}
+
+function mermaidHeuristicError(body) {
+  const first = body.trim().split(/\s+/u)[0]?.toLowerCase() ?? "";
   if (
     (first === "flowchart" || first === "graph") &&
     (/(?:^|\n|\s)end\s*[[({]/u.test(body) ||
       /-->\s*end\s*(?:$|\n|;)/mu.test(body))
   )
-    return true;
-  return /[[({][^\])}]*[;< >][^\])}]*[\])}]/u.test(body);
+    return "Heuristic: `end` is a reserved word and cannot be a flowchart node id; rename the node.";
+  if (/[[({][^)\]}]*;[^)\]}]*[)\]}]/u.test(body))
+    return "Heuristic: a semicolon inside a label breaks rendering; rephrase the label.";
+  if (/[[({][^)\]}]*[<>][^)\]}]*[)\]}]/u.test(body))
+    return "Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label.";
+  return undefined;
 }
 function headingAnchors(content) {
   const counts = new Map();

@@ -763,6 +763,30 @@ test("native link validation clamps paths and stamps upstream-compatible diagnos
   );
 });
 
+test("native Mermaid validation uses upstream fence extraction and fallback diagnostics", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "diagrams.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Diagrams\n---\n\n# Diagrams\n\n```mermaid\nflowchart TD\nnode[one; two]\n```\n\n````markdown\n```mermaid\nflowchart TD\nexample[one; two]\n```\n````\n",
+    "utf8",
+  );
+
+  await finalizeWiki(root);
+
+  const content = await readFile(page, "utf8");
+  assert.match(
+    content,
+    /<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering\. Fix the diagram source and restore the mermaid fence\. Parser error: Heuristic: a semicolon inside a label breaks rendering; rephrase the label\. -->\n```text/u,
+  );
+  assert.match(
+    content,
+    /````markdown\n```mermaid\nflowchart TD\nexample\[one; two\]\n```\n````/u,
+  );
+  assert.equal((content.match(/mermaid parse failed/gu) ?? []).length, 1);
+});
+
 test("Claims source projection preserves authored sources and replaces only native entries", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
