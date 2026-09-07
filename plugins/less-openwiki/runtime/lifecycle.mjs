@@ -22,6 +22,7 @@ import {
   readJson,
 } from "./storage.mjs";
 import {
+  claimsPath,
   preflightClaims,
   reconcileClaims,
   refreshClaimsPageVersion,
@@ -43,7 +44,7 @@ export async function sessionContext(root) {
 
 export async function startOrResume(root, input) {
   const existing = await loadRun(root);
-  if (existing) return sessionContext(root);
+  if (existing) return resumeActiveRun(root, existing);
   const existingPages = await factualPages(root);
   const mode = existingPages.length === 0 ? "init" : "update";
   const source = await sourceSnapshot(root);
@@ -177,6 +178,7 @@ export async function checkpoint(root, input) {
   );
   await finalizePage(root, current.path, state.actor.producerActor, claims);
   await refreshClaimsPageVersion(root, current.path);
+  await recordManifestPageCompletion(root, current.path, state);
   current.status = "complete";
   current.completedBy = actorFor();
   await rm(pageIntentPath(root, current.path), { force: true });
@@ -221,7 +223,7 @@ export async function finish(root) {
       `Claims evidence is stale or unresolved: ${issues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ")}`,
     );
   await finalizeWiki(root);
-  await writeManifest(root, pages, state);
+  await replaceManifest(root, pages, state);
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),
     command: state.mode,
@@ -267,6 +269,34 @@ async function invalidateForSourceDrift(root, state, source) {
     status: "interrupted",
     language: state.language,
   });
+}
+
+async function resumeActiveRun(root, state) {
+  const source = await sourceSnapshot(root);
+  if (source.fingerprint !== state.sourceFingerprint) {
+    await invalidateForSourceDrift(root, state, source);
+    return context(
+      "Repository source changed since this documentation run started. Write a fresh semantic plan before generated Markdown.",
+    );
+  }
+  if (await reconcileManifestPageJobs(root, state)) await writeRun(root, state);
+  return sessionContext(root);
+}
+
+async function reconcileManifestPageJobs(root, state) {
+  if (state.phase !== "generating") return false;
+  const manifest = await readManifest(root);
+  let changed = false;
+  for (const job of state.plan.pages) {
+    if (job.status !== "pending") continue;
+    const entry = manifest.pages[`/${job.path}`];
+    if (!(await manifestCompletionIsCurrent(root, job.path, state, entry)))
+      continue;
+    job.status = "complete";
+    job.completedBy = entry.completedBy ?? state.actor.producerActor;
+    changed = true;
+  }
+  return changed;
 }
 
 async function acceptPlan(root, state) {
@@ -560,7 +590,7 @@ async function stampGenerated(root, page, actor) {
   if (next !== content)
     await writeFile(file, next.endsWith("\n") ? next : `${next}\n`, "utf8");
 }
-async function writeManifest(root, pages, state) {
+async function replaceManifest(root, pages, state) {
   const entries = {};
   for (const file of pages) {
     const page = relative(root, file);
@@ -574,7 +604,109 @@ async function writeManifest(root, pages, state) {
       completedRunId: state.runId,
     };
   }
-  await writeJson(manifestPath(root), { schemaVersion: 1, pages: entries });
+  await writeManifest(root, { schemaVersion: 1, pages: entries });
+}
+
+async function recordManifestPageCompletion(root, page, state) {
+  const pageVersion = hash(await readFile(path.join(root, page)));
+  const sidecar = await readJson(claimsPath(root, page), { required: true });
+  if (
+    !sidecar?.verification ||
+    sidecar.pageVersion !== pageVersion ||
+    !Array.isArray(sidecar.claims)
+  )
+    throw new Error(
+      `Cannot record completion for ${page}; Markdown and verified Claims are not durable.`,
+    );
+  const manifest = await readManifest(root);
+  manifest.pages[`/${page}`] = {
+    ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
+    sourceFingerprint: state.sourceFingerprint,
+    pageVersion,
+    completedBy: state.actor.producerActor,
+    completedRunId: state.runId,
+  };
+  await writeManifest(root, manifest);
+}
+
+async function manifestCompletionIsCurrent(root, page, state, entry) {
+  if (
+    !entry ||
+    entry.sourceFingerprint !== state.sourceFingerprint ||
+    (state.targetGitHead && entry.gitHead !== state.targetGitHead) ||
+    entry.completedRunId !== state.runId
+  )
+    return false;
+  const pageVersion = hash(await readFile(path.join(root, page)));
+  if (entry.pageVersion !== pageVersion) return false;
+  const sidecar = await readJson(claimsPath(root, page));
+  return Boolean(
+    sidecar?.verification &&
+    sidecar.pageVersion === pageVersion &&
+    Array.isArray(sidecar.claims),
+  );
+}
+
+async function readManifest(root) {
+  const manifest = await readJson(manifestPath(root));
+  if (!manifest) return { schemaVersion: 1, pages: {} };
+  if (!validManifest(manifest))
+    throw new Error(
+      "invalid OpenWiki page manifest; refusing to discard committed page coverage",
+    );
+  return manifest;
+}
+
+async function writeManifest(root, manifest) {
+  if (!validManifest(manifest))
+    throw new Error("invalid OpenWiki page manifest");
+  await writeJson(manifestPath(root), {
+    schemaVersion: 1,
+    pages: Object.fromEntries(
+      Object.entries(manifest.pages).sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+  });
+}
+
+function validManifest(manifest) {
+  return (
+    manifest &&
+    typeof manifest === "object" &&
+    Object.keys(manifest).length === 2 &&
+    manifest.schemaVersion === 1 &&
+    manifest.pages &&
+    typeof manifest.pages === "object" &&
+    !Array.isArray(manifest.pages) &&
+    Object.entries(manifest.pages).every(([page, entry]) => {
+      try {
+        if (`/${normalizePage(page)}` !== page) return false;
+      } catch {
+        return false;
+      }
+      return (
+        entry &&
+        typeof entry === "object" &&
+        Object.keys(entry).every((key) =>
+          [
+            "gitHead",
+            "sourceFingerprint",
+            "pageVersion",
+            "completedBy",
+            "completedRunId",
+          ].includes(key),
+        ) &&
+        /^sha256:[a-f0-9]{64}$/u.test(entry.pageVersion) &&
+        (entry.gitHead === undefined || typeof entry.gitHead === "string") &&
+        (entry.sourceFingerprint === undefined ||
+          /^sha256:[a-f0-9]{64}$/u.test(entry.sourceFingerprint)) &&
+        (entry.completedBy === undefined ||
+          (typeof entry.completedBy === "string" && entry.completedBy)) &&
+        (entry.completedRunId === undefined || isUuid(entry.completedRunId))
+      );
+    })
+  );
 }
 async function synchronizeIndexes(root) {
   const wikiRoot = path.join(root, "openwiki");

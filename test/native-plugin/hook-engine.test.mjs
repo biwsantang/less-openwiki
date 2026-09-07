@@ -84,6 +84,13 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
       tool_input: { file_path: page },
     });
     assert.match(result.hookSpecificOutput.additionalContext, /Recorded/u);
+    const checkpointManifest = JSON.parse(
+      await readFile(
+        path.join(root, "openwiki", ".page-manifest.json"),
+        "utf8",
+      ),
+    );
+    assert.ok(checkpointManifest.pages[`/${page}`]);
   }
 
   const final = invoke(root, "stop", { hook_event_name: "Stop", cwd: root });
@@ -316,6 +323,54 @@ test("source snapshots distinguish staged and unstaged source state", async (t) 
   execFileSync("git", ["add", "README.md"], { cwd: root });
   const staged = (await sourceSnapshot(root)).fingerprint;
   assert.notEqual(staged, unstaged);
+});
+
+test("a resumed run recovers a checkpointed page from durable manifest coverage", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  await writeIntent(root, "openwiki/quickstart.md", "README.md");
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Fixture documentation.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/quickstart.md" },
+  });
+  const runFile = path.join(root, "openwiki", ".run.json");
+  const interrupted = JSON.parse(await readFile(runFile, "utf8"));
+  interrupted.plan.pages[0].status = "pending";
+  delete interrupted.plan.pages[0].completedBy;
+  await writeJson(runFile, interrupted);
+
+  const resumed = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Resume documentation.",
+  });
+  assert.match(
+    resumed.hookSpecificOutput.additionalContext,
+    /All queued pages/u,
+  );
+  const recovered = JSON.parse(await readFile(runFile, "utf8"));
+  assert.equal(recovered.plan.pages[0].status, "complete");
+  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.5.0");
 });
 
 test("source drift invalidates a durable queue and returns the run to planning", async (t) => {
