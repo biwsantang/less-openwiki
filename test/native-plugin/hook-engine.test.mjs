@@ -398,6 +398,40 @@ test("native prompt detection recognizes documentation migration requests", asyn
   );
 });
 
+test("native run requests validate language before durable state and reject resume conflicts", async (t) => {
+  const root = await fixture(t);
+  const invalid = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+    language: "Korean",
+  });
+  assert.match(invalid.systemMessage, /Unrecognized language "Korean"/u);
+  await assert.rejects(readFile(path.join(root, "openwiki", ".run.json")));
+
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Initialize project documentation.",
+    language: "ko",
+  });
+  const conflicting = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Resume the documentation.",
+    language: "fr",
+  });
+  assert.match(
+    conflicting.systemMessage,
+    /uses ko; resume it before changing/u,
+  );
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json")))
+      .language,
+    "ko",
+  );
+});
+
 test("a changed documentation language adds every omitted factual page to the plan", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });

@@ -67,10 +67,15 @@ export async function sessionContext(root) {
 export async function startOrResume(root, input) {
   const existing = await loadRun(root);
   const requestedMode = requestedRunMode(input);
+  const requestedLanguage = requestedInputLanguage(input);
   if (existing) {
     if (requestedMode && requestedMode !== existing.mode)
       throw new Error(
         `an interrupted ${existing.mode} documentation run already exists; resume it before starting ${requestedMode}`,
+      );
+    if (requestedLanguage && requestedLanguage !== existing.language)
+      throw new Error(
+        `an interrupted documentation run uses ${existing.language}; resume it before changing the language to ${requestedLanguage}`,
       );
     return resumeActiveRun(root, existing);
   }
@@ -120,8 +125,13 @@ export async function startOrResume(root, input) {
       mode,
       phase: "planning",
       startedAt: now(),
-      language: lastUpdate?.language ?? "en",
-      languageChanged: false,
+      language: requestedLanguage ?? lastUpdate?.language ?? "en",
+      languageChanged: Boolean(
+        requestedLanguage &&
+        lastUpdate?.language &&
+        primaryLanguage(lastUpdate.language) !==
+          primaryLanguage(requestedLanguage),
+      ),
       requiredRewritePages: [],
       initialPages: existingPages.map((file) => `/${relative(root, file)}`),
       sourceFingerprint: source.fingerprint,
@@ -759,6 +769,13 @@ function requestedRunMode(input) {
   )
     return "update";
   return undefined;
+}
+
+function requestedInputLanguage(input) {
+  if (input.language === undefined || input.language === null) return undefined;
+  if (typeof input.language !== "string" || !input.language.trim())
+    throw new Error("language must be a non-empty BCP-47 code");
+  return resolveLanguage(input.language);
 }
 
 function hasExplicitLanguageRequest(input) {

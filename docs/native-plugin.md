@@ -73,6 +73,11 @@ after advancing manifest coverage. If source moved during that durable write,
 it starts a normal interrupted update instead of publishing stale “current”
 metadata.
 
+When a host provides a `language` value, it is validated as a BCP-47 code before
+any run state is written. A resumed run cannot switch languages; use a new
+update after the active run has completed or been reconciled. Conversational
+language requests remain representable in the semantic plan.
+
 While generating or resuming, the hook also supplies the complete current page
 job: its title, purpose, repository seed paths, related pages, and any planner
 instructions, plus the existing Claim count and any stale or unresolved Claim
