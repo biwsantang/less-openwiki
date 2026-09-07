@@ -426,6 +426,37 @@ export async function synchronizeClaimSources(root) {
   }
 }
 
+/** Reconciles native verification events against every durable Claims sidecar. */
+export async function synchronizeClaimsVerification(root) {
+  for (const file of await markdownFiles(path.join(root, "openwiki"))) {
+    const page = relative(root, file);
+    const content = await readFile(file, "utf8");
+    const sidecar = await readClaimsSidecar(root, page);
+    const current = verificationEvents(yamlFrontmatter(content)?.verified);
+    const retained = current.filter(({ by }) => !by.startsWith("openwiki/"));
+    const active =
+      sidecar?.claims.length &&
+      sidecar.verification &&
+      typeof sidecar.verification.by === "string" &&
+      typeof sidecar.verification.at === "string"
+        ? { by: sidecar.verification.by, at: sidecar.verification.at }
+        : undefined;
+    const next = active ? [...retained, active] : retained;
+    const verified = yamlFrontmatter(content)?.verified;
+    if (
+      JSON.stringify(current) === JSON.stringify(next) &&
+      (verified === undefined || Array.isArray(verified))
+    )
+      continue;
+    const projected = replaceFrontmatterField(
+      content,
+      "verified",
+      next.length ? renderStructuredList("verified", next) : [],
+    );
+    if (projected !== content) await writeFile(file, projected, "utf8");
+  }
+}
+
 /** Reconciles generated provenance against the pre-authoring body snapshot. */
 export async function finalizeGeneratedProvenance(root, state) {
   const initial = new Map(
@@ -446,15 +477,7 @@ export async function finalizeGeneratedProvenance(root, state) {
           state.startedAt,
         )
       : restoreGenerated(content, prior.generated);
-    const verified =
-      job?.status === "complete"
-        ? synchronizeVerification(
-            next,
-            job.completedBy ?? state.actor.producerActor,
-            state.startedAt,
-          )
-        : next;
-    if (verified !== content) await writeFile(file, verified, "utf8");
+    if (next !== content) await writeFile(file, next, "utf8");
   }
 }
 
@@ -494,16 +517,6 @@ function restoreGenerated(content, previous) {
     return content;
   if (!previous) return replaceFrontmatterField(content, "generated", []);
   return setGenerated(content, previous.by, previous.at ?? "");
-}
-
-function synchronizeVerification(content, actor, at) {
-  const events = verificationEvents(yamlFrontmatter(content)?.verified);
-  const retained = events.filter(({ by }) => !by.startsWith("openwiki/"));
-  return replaceFrontmatterField(
-    content,
-    "verified",
-    renderStructuredList("verified", [...retained, { by: actor, at }]),
-  );
 }
 
 /** Builds deterministic OKF v0.2 navigation indexes after Claims validation. */

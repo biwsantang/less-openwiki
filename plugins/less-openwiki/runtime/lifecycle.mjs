@@ -38,6 +38,7 @@ import {
   normalizeWikiOkf,
   readGeneratedEvent,
   synchronizeClaimSources,
+  synchronizeClaimsVerification,
   validateOkfFrontmatter,
 } from "./okf.mjs";
 
@@ -273,6 +274,7 @@ export async function finish(root) {
     );
   await finalizeWiki(root, state.language);
   await synchronizeClaimSources(root);
+  await synchronizeClaimsVerification(root);
   await finalizeGeneratedProvenance(root, state);
   for (const file of pages)
     await refreshClaimsPageVersion(root, relative(root, file));
