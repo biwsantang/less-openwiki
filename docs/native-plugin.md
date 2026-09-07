@@ -154,3 +154,7 @@ that should receive them:
 The scheduled workflow publishes this report as a GitHub Actions summary and
 artifact. Maintainers review it before changing the plugin, so behavior changes
 remain explicit and testable.
+
+See the [upstream parity matrix](upstream-parity.md) for the maintained mapping
+between repository-documentation behavior, native components, and regression
+coverage.

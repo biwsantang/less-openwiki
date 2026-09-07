@@ -84,6 +84,9 @@ workflows, tests, runtime adapters, and supporting code. Review it with the
 plugin and carry relevant behavior into the shared skill, lifecycle hooks, or
 engine as appropriate.
 
+Maintainers can use the [upstream parity matrix](docs/upstream-parity.md) to
+map repository behavior to its native implementation and regression coverage.
+
 ## Validation and development
 
 ```sh
