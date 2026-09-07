@@ -5,8 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
-import { repositoryChangedPaths } from "../../plugins/less-openwiki/runtime/storage.mjs";
-import { hash } from "../../plugins/less-openwiki/runtime/storage.mjs";
+import {
+  hash,
+  repositoryChangedPaths,
+  sourceSnapshot,
+} from "../../plugins/less-openwiki/runtime/storage.mjs";
 
 const engine = path.resolve(
   "plugins/less-openwiki/hooks/less-openwiki-hook.mjs",
@@ -296,6 +299,23 @@ test("source content drift is detected even when Git status stays modified", asy
     output.hookSpecificOutput.permissionDecisionReason,
     /source changed/u,
   );
+});
+
+test("source snapshots distinguish staged and unstaged source state", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  execFileSync("git", ["add", "README.md"], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: root,
+  });
+  await writeFile(path.join(root, "README.md"), "# Modified fixture\n", "utf8");
+  const unstaged = (await sourceSnapshot(root)).fingerprint;
+  execFileSync("git", ["add", "README.md"], { cwd: root });
+  const staged = (await sourceSnapshot(root)).fingerprint;
+  assert.notEqual(staged, unstaged);
 });
 
 test("source drift invalidates a durable queue and returns the run to planning", async (t) => {

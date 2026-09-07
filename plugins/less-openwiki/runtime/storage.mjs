@@ -42,6 +42,11 @@ export function git(cwd, args) {
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
+function gitRaw(cwd, args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return result.status === 0 ? result.stdout : null;
+}
+
 export function runPath(root) {
   return path.join(root, WIKI, ".run.json");
 }
@@ -158,6 +163,27 @@ export async function sourceSnapshot(root) {
   digest.update(
     (git(root, ["rev-parse", "--verify", "HEAD"]) ?? "unborn").trim(),
   );
+  // A source snapshot is also sensitive to the Git index. Identical worktree
+  // bytes are not equivalent when one version is staged and the other is not.
+  for (const record of (
+    gitRaw(root, [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--no-renames",
+      "-z",
+    ]) ?? ""
+  ).split("\0")) {
+    if (record.length < 4 || record[2] !== " ") continue;
+    const file = record.slice(3).replace(/\\/gu, "/");
+    if (
+      file === WIKI ||
+      file.startsWith(`${WIKI}/`) ||
+      (file !== ".openwikiignore" && ignore(file))
+    )
+      continue;
+    digest.update(`status\0${record.slice(0, 2)}\0${file}\0`);
+  }
   for (const file of files) {
     if (
       file === ".git" ||
