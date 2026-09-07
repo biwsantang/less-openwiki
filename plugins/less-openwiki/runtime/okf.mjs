@@ -1,6 +1,6 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { hash, isDirectory } from "./storage.mjs";
+import { hash, isDirectory, relative } from "./storage.mjs";
 
 /**
  * Brings existing factual pages to the minimum OKF shape before an update.
@@ -74,16 +74,79 @@ function conceptTypeFor(language) {
 /** Applies page-local provenance and Claims-source projections after Claims succeeds. */
 export async function finalizePage(root, page, actor, claims, at) {
   await projectClaimSources(root, page, claims);
-  const file = path.join(root, page);
-  const content = await readFile(file, "utf8");
-  const next = content.replace(
-    /^---\r?\n([\s\S]*?)\r?\n---/u,
-    (_all, frontmatter) =>
-      `---\n${frontmatter.replace(/^generated:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\ngenerated:\n  by: ${actor}\n  at: ${at}\n---`,
+}
+
+/** Reconciles generated provenance against the pre-authoring body snapshot. */
+export async function finalizeGeneratedProvenance(root, state) {
+  const initial = new Map(
+    state.preparedWiki.generatedProvenance.map((entry) => [entry.page, entry]),
   );
-  const generated = next.endsWith("\n") ? next : `${next}\n`;
-  const verified = synchronizeVerification(generated, actor, at);
-  if (verified !== content) await writeFile(file, verified, "utf8");
+  for (const file of await markdownFiles(path.join(root, "openwiki"))) {
+    const page = `/${relative(root, file)}`;
+    const content = await readFile(file, "utf8");
+    const prior = initial.get(page);
+    const changed = !prior || prior.bodyHash !== bodyHash(content);
+    const job = state.plan.pages.find(
+      (candidate) => `/${candidate.path}` === page,
+    );
+    const next = changed
+      ? setGenerated(
+          content,
+          job?.completedBy ?? state.actor.producerActor,
+          state.startedAt,
+        )
+      : restoreGenerated(content, prior.generated);
+    const verified =
+      job?.status === "complete"
+        ? synchronizeVerification(
+            next,
+            job.completedBy ?? state.actor.producerActor,
+            state.startedAt,
+          )
+        : next;
+    if (verified !== content) await writeFile(file, verified, "utf8");
+  }
+}
+
+function bodyHash(content) {
+  return hash(content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/u, ""));
+}
+
+function readGenerated(content) {
+  const block = /^generated:\n((?:^[ \t].*(?:\n|$))*)/mu.exec(
+    /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1] ?? "",
+  )?.[1];
+  const by = /^\s*by:\s*(\S.*?)\s*$/mu.exec(block ?? "")?.[1]?.trim();
+  const at = /^\s*at:\s*(\S.*?)\s*$/mu.exec(block ?? "")?.[1]?.trim();
+  return by ? { by, ...(at ? { at } : {}) } : undefined;
+}
+
+function setGenerated(content, actor, at) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
+  if (!match) return content;
+  const clean = match[1]
+    .replace(/^generated:\n(?:^[ \t].*(?:\n|$))*/mu, "")
+    .replace(/^timestamp:\s*.*\n?/mu, "")
+    .trimEnd();
+  return content.replace(
+    /^---\r?\n([\s\S]*?)\r?\n---/u,
+    `---\n${clean}\ngenerated:\n  by: ${actor}${at ? `\n  at: ${at}` : ""}\n---`,
+  );
+}
+
+function restoreGenerated(content, previous) {
+  const current = readGenerated(content);
+  if (current?.by === previous?.by && current?.at === previous?.at)
+    return content;
+  if (!previous) {
+    const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
+    if (!match) return content;
+    return content.replace(
+      /^---\r?\n([\s\S]*?)\r?\n---/u,
+      `---\n${match[1].replace(/^generated:\n(?:^[ \t].*(?:\n|$))*/mu, "").trimEnd()}\n---`,
+    );
+  }
+  return setGenerated(content, previous.by, previous.at ?? "");
 }
 
 function synchronizeVerification(content, actor, at) {

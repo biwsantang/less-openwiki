@@ -30,7 +30,12 @@ import {
   removeOrphanClaims,
   removeClaims,
 } from "./claims.mjs";
-import { finalizePage, finalizeWiki, normalizeWikiOkf } from "./okf.mjs";
+import {
+  finalizeGeneratedProvenance,
+  finalizePage,
+  finalizeWiki,
+  normalizeWikiOkf,
+} from "./okf.mjs";
 
 export async function sessionContext(root) {
   const state = await loadRun(root);
@@ -234,6 +239,7 @@ export async function finish(root) {
       `Claims evidence is stale or unresolved: ${issues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ")}`,
     );
   await finalizeWiki(root, state.language);
+  await finalizeGeneratedProvenance(root, state);
   for (const file of pages)
     await refreshClaimsPageVersion(root, relative(root, file));
   await replaceManifest(root, pages, state);
@@ -627,15 +633,19 @@ async function wikiSnapshot(root) {
 async function provenanceSnapshot(root) {
   const pages = await factualPages(root);
   return Promise.all(
-    pages.map(async (file) => ({
-      page: `/${relative(root, file)}`,
-      bodyHash: hash(
-        (await readFile(file, "utf8")).replace(
-          /^---\r?\n[\s\S]*?\r?\n---\r?\n?/u,
-          "",
-        ),
-      ),
-    })),
+    pages.map(async (file) => {
+      const content = await readFile(file, "utf8");
+      const generated = /^generated:\n((?:^[ \t].*(?:\n|$))*)/mu.exec(
+        /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1] ?? "",
+      )?.[1];
+      const by = /^\s*by:\s*(\S.*?)\s*$/mu.exec(generated ?? "")?.[1]?.trim();
+      const at = /^\s*at:\s*(\S.*?)\s*$/mu.exec(generated ?? "")?.[1]?.trim();
+      return {
+        page: `/${relative(root, file)}`,
+        bodyHash: hash(content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/u, "")),
+        ...(by ? { generated: { by, ...(at ? { at } : {}) } } : {}),
+      };
+    }),
   );
 }
 async function createRollback(root, state) {

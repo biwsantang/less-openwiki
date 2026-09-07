@@ -17,6 +17,7 @@ import {
   reconcileClaims,
 } from "../../plugins/less-openwiki/runtime/claims.mjs";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
+import { finalizeGeneratedProvenance } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
   hash,
   repositoryChangedPaths,
@@ -252,6 +253,32 @@ test("an update normalizes an existing page with unusable front matter", async (
   assert.equal(
     await readFile(path.join(root, "openwiki", "existing-page.md"), "utf8"),
     '---\ntype: "Reference"\ntitle: "Existing page"\nopenwiki_generated: true\n---\n\n# Existing page\n\nThis is existing documentation.\n',
+  );
+});
+
+test("generated provenance preserves an untouched page's prior producer event", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const original =
+    "---\ntype: concept\ngenerated:\n  by: example/1.0\n  at: 2025-01-01T00:00:00.000Z\n---\n\n# Existing\n";
+  await writeFile(path.join(root, "openwiki", "existing.md"), original, "utf8");
+  await finalizeGeneratedProvenance(root, {
+    startedAt: "2026-01-01T00:00:00.000Z",
+    actor: { producerActor: "openwiki/0.5.0" },
+    plan: { pages: [] },
+    preparedWiki: {
+      generatedProvenance: [
+        {
+          page: "/openwiki/existing.md",
+          bodyHash: hash("\n# Existing\n"),
+          generated: { by: "example/1.0", at: "2025-01-01T00:00:00.000Z" },
+        },
+      ],
+    },
+  });
+  assert.equal(
+    await readFile(path.join(root, "openwiki", "existing.md"), "utf8"),
+    original,
   );
 });
 
