@@ -55,12 +55,12 @@ assert(
   "Codex manifest must explicitly declare its lifecycle hook package.",
 );
 assert(
-  codexManifest.version === "0.4.0",
-  "Codex manifest version must be 0.4.0.",
+  codexManifest.version === "0.4.1",
+  "Codex manifest version must be 0.4.1.",
 );
 assert(
-  claudeManifest.version === "0.4.0",
-  "Claude manifest version must be 0.4.0.",
+  claudeManifest.version === "0.4.1",
+  "Claude manifest version must be 0.4.1.",
 );
 for (const [host, manifest] of [
   ["Codex", codexManifest],
