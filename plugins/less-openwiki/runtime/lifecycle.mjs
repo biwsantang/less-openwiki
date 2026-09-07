@@ -51,6 +51,7 @@ import {
   validateOkfFrontmatter,
 } from "./okf.mjs";
 import { OPENWIKI_PRODUCER_ACTOR } from "./identity.mjs";
+import { ensureCodeModeAgentSnippets, isManagedAgentFile } from "./setup.mjs";
 
 export async function sessionContext(root) {
   const state = await loadRun(root);
@@ -65,6 +66,9 @@ export async function sessionContext(root) {
 }
 
 export async function startOrResume(root, input) {
+  // This is upstream's code-mode setup boundary. Refresh it for new runs and
+  // resumes, but before touching durable state so malformed markers fail clean.
+  await ensureCodeModeAgentSnippets(root);
   const existing = await loadRun(root);
   const requestedMode = requestedRunMode(input);
   const requestedLanguage = requestedInputLanguage(input);
@@ -174,7 +178,20 @@ export async function startOrResume(root, input) {
 }
 
 export async function guardWrite(root, input) {
-  const state = await loadRun(root);
+  let state = await loadRun(root);
+  const targets = extractTargets(input, root);
+  // Delegated Codex tasks receive their work as a handoff rather than a user
+  // prompt, so they can legitimately miss UserPromptSubmit. The first plan
+  // write is an unambiguous native lifecycle boundary; bootstrap it here while
+  // the trusted PreToolUse hook is active.
+  if (!state && mayMutate(input) && targets.includes(planIntentPath(root))) {
+    await startOrResume(root, input);
+    state = await loadRun(root);
+    if (!state)
+      return deny(
+        "The documentation lifecycle reported this repository current; do not write a new plan unless source changes require an update.",
+      );
+  }
   if (!state) return {};
   // Lifecycle files are write-owned, but agents need to inspect a Claim's
   // current identifiers and evidence before proposing a reconciliation.
@@ -186,7 +203,13 @@ export async function guardWrite(root, input) {
       "Repository source changed during this documentation run. The active plan was invalidated; write a fresh semantic plan before generated pages.",
     );
   }
-  const targets = extractTargets(input, root);
+  const managedInstruction = targets.find((target) =>
+    isManagedAgentFile(root, target),
+  );
+  if (managedInstruction)
+    return deny(
+      `The documentation lifecycle owns the OpenWiki managed block in ${relative(root, managedInstruction)}.`,
+    );
   const protectedTarget = targets.find((target) => ownedState(root, target));
   if (protectedTarget)
     return deny(
@@ -1623,6 +1646,14 @@ function extractTargets(input, root) {
           ),
         ].map((match) => match[1]),
       );
+  if (typeof tool.patch === "string")
+    raw.push(
+      ...[
+        ...tool.patch.matchAll(
+          /^\*\*\* (?:Add|Delete|Update) File: ([^\r\n]+)/gmu,
+        ),
+      ].map((match) => match[1].trim()),
+    );
   return [
     ...new Set(
       raw

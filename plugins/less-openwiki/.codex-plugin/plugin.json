@@ -1,6 +1,6 @@
 {
   "name": "less-openwiki",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Repository documentation workflow with durable native lifecycle hooks.",
   "author": {
     "name": "Biw Santang",
@@ -11,6 +11,7 @@
   "license": "MIT",
   "keywords": ["documentation", "repository", "wiki", "codex", "claude-code"],
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Less OpenWiki",
     "shortDescription": "Maintain repository documentation with your coding agent.",

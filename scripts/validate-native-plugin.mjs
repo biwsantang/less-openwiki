@@ -18,6 +18,7 @@ const requiredFiles = [
   path.join(pluginRoot, "runtime", "evidence.mjs"),
   path.join(pluginRoot, "runtime", "okf.mjs"),
   path.join(pluginRoot, "runtime", "identity.mjs"),
+  path.join(pluginRoot, "runtime", "setup.mjs"),
   path.join(pluginRoot, "runtime", "vendor", "yaml.mjs"),
   path.join(pluginRoot, "runtime", "vendor", "NOTICE.md"),
   path.join(root, ".agents", "plugins", "marketplace.json"),
@@ -31,8 +32,8 @@ for (const file of requiredFiles) {
 const codexManifest = await readJson(requiredFiles[0]);
 const claudeManifest = await readJson(requiredFiles[1]);
 const hooks = await readJson(requiredFiles[3]);
-const codexMarketplace = await readJson(requiredFiles[13]);
-const claudeMarketplace = await readJson(requiredFiles[14]);
+const codexMarketplace = await readJson(requiredFiles[14]);
+const claudeMarketplace = await readJson(requiredFiles[15]);
 const identity = await import(path.join(pluginRoot, "runtime", "identity.mjs"));
 
 assert(
@@ -48,12 +49,16 @@ assert(
   "Codex manifest must declare the skills directory.",
 );
 assert(
-  codexManifest.version === "0.2.0",
-  "Codex manifest version must be 0.2.0.",
+  codexManifest.hooks === "./hooks/hooks.json",
+  "Codex manifest must explicitly declare its lifecycle hook package.",
 );
 assert(
-  claudeManifest.version === "0.2.0",
-  "Claude manifest version must be 0.2.0.",
+  codexManifest.version === "0.3.0",
+  "Codex manifest version must be 0.3.0.",
+);
+assert(
+  claudeManifest.version === "0.3.0",
+  "Claude manifest version must be 0.3.0.",
 );
 for (const [host, manifest] of [
   ["Codex", codexManifest],

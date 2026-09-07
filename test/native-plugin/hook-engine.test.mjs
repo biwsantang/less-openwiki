@@ -53,6 +53,11 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.equal(state.phase, "planning");
   const startedAt = state.startedAt;
   assert.equal(state.previousLastUpdate, null);
+  for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+    const content = await readFile(path.join(root, file), "utf8");
+    assert.match(content, /<!-- OPENWIKI:START -->/u);
+    assert.match(content, /<!-- OPENWIKI:END -->/u);
+  }
 
   await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
     pages: [
@@ -157,7 +162,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     assert.match(result.hookSpecificOutput.additionalContext, /Recorded/u);
     assert.match(
       await readFile(absolute, "utf8"),
-      /verified:\n\s+- by: openwiki\/0\.2\.0/u,
+      /verified:\n\s+- by: openwiki\/0\.3\.0/u,
     );
     const checkpointManifest = JSON.parse(
       await readFile(
@@ -219,7 +224,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.match(quickstart, new RegExp(`at: ${startedAt}`, "u"));
   assert.match(
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
-    /verified:\n\s+- by: openwiki\/0\.2\.0/u,
+    /verified:\n\s+- by: openwiki\/0\.3\.0/u,
   );
   assert.equal(
     await readFile(path.join(root, "openwiki", "index.md"), "utf8"),
@@ -245,6 +250,68 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.equal(architectureClaims.pageVersion, hash(architecture));
   assert.match(architecture, /broken internal link/u);
   assert.match(architecture, /```text/u);
+});
+
+test("a first plan write bootstraps a delegated native run", async (t) => {
+  const root = await fixture(t);
+  const result = invoke(root, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    cwd: root,
+    tool_name: "apply_patch",
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  assert.deepEqual(result, {});
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(state.mode, "init");
+  assert.equal(state.phase, "planning");
+});
+
+test("native setup preserves user guidance and fails closed on malformed markers", async (t) => {
+  const root = await fixture(t);
+  await writeFile(
+    path.join(root, "AGENTS.md"),
+    "# Repository policy\n\nKeep this text.\n\n<!-- OPENWIKI:START -->\nstale\n<!-- OPENWIKI:END -->\n\nKeep this too.\n",
+    "utf8",
+  );
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Initialize documentation.",
+  });
+  const refreshed = await readFile(path.join(root, "AGENTS.md"), "utf8");
+  assert.match(refreshed, /Keep this text\./u);
+  assert.match(refreshed, /Keep this too\./u);
+  assert.doesNotMatch(refreshed, /stale/u);
+  assert.equal((refreshed.match(/<!-- OPENWIKI:START -->/gu) ?? []).length, 1);
+  const denied = invoke(root, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    cwd: root,
+    tool_name: "apply_patch",
+    tool_input: { patch: "*** Update File: AGENTS.md\n@@\n-old\n+new\n" },
+  });
+  assert.match(
+    denied.hookSpecificOutput.permissionDecisionReason,
+    /managed block/u,
+  );
+
+  const malformed = await fixture(t);
+  await writeFile(
+    path.join(malformed, "AGENTS.md"),
+    "<!-- OPENWIKI:START -->\n",
+    "utf8",
+  );
+  const failure = invoke(malformed, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: malformed,
+    prompt: "Initialize documentation.",
+  });
+  assert.match(failure.systemMessage, /managed markers are malformed/u);
+  await assert.rejects(
+    readFile(path.join(malformed, "openwiki", ".run.json"), "utf8"),
+  );
+  await assert.rejects(readFile(path.join(malformed, "CLAUDE.md"), "utf8"));
 });
 
 test("the native hook runs from an isolated plugin package", async (t) => {
@@ -2336,7 +2403,7 @@ test("a resumed run recovers a checkpointed page from durable manifest coverage"
   );
   const recovered = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(recovered.plan.pages[0].status, "complete");
-  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.2.0");
+  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.3.0");
 });
 
 test("a resume rejects completed native work that lost its durable Claims proof", async (t) => {
