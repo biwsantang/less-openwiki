@@ -10,28 +10,107 @@ import { hash, isDirectory, relative } from "./storage.mjs";
 export async function normalizeWikiOkf(root, language = "en") {
   for (const file of await markdownFiles(path.join(root, "openwiki"))) {
     const original = await readFile(file, "utf8");
-    if (hasUsableOkfType(original)) continue;
-    const { body } = splitFrontmatter(original);
-    const title = firstHeading(body) ?? titleFromFilename(file);
-    const content = `---\ntype: ${JSON.stringify(conceptTypeFor(language))}\ntitle: ${JSON.stringify(title)}\nopenwiki_generated: true\n---\n\n${body}`;
+    const content = repairOkfFrontmatter(
+      original,
+      file,
+      conceptTypeFor(language),
+    );
     if (content !== original) await writeFile(file, content, "utf8");
   }
 }
 
-function hasUsableOkfType(content) {
-  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(
-    content,
-  )?.[1];
-  if (!frontmatter) return false;
-  const raw = /^type:\s*(.+?)\s*$/mu.exec(frontmatter)?.[1]?.trim();
-  if (!raw || /^(?:null|~|\[|\{|\||>|-)/iu.test(raw)) return false;
-  const value = /^(["'])(.*)\1$/u.exec(raw)?.[2] ?? raw;
-  return Boolean(value.trim());
+function repairOkfFrontmatter(content, file, conceptType) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content);
+  const body = match ? content.slice(match[0].length) : content;
+  const fallback = () => {
+    const title = firstHeading(body) ?? titleFromFilename(file);
+    return `---\ntype: ${JSON.stringify(conceptType)}\ntitle: ${JSON.stringify(title)}\nopenwiki_generated: true\n---\n\n${body}`;
+  };
+  if (!match) return fallback();
+  const fields = frontmatterFields(match[1]);
+  if (!fields || !frontmatterLooksComplete(fields)) return fallback();
+  const replacements = new Map();
+  const type = fields.get("type");
+  const typeWasDerived = !isNonEmptyYamlString(type);
+  if (typeWasDerived) {
+    replacements.set("type", [`type: ${JSON.stringify(conceptType)}`]);
+    replacements.set("openwiki_generated", ["openwiki_generated: true"]);
+  }
+  const title = fields.get("title");
+  if ((typeWasDerived && !title) || (title && !isNonEmptyYamlString(title))) {
+    replacements.set("title", [
+      `title: ${JSON.stringify(firstHeading(body) ?? titleFromFilename(file))}`,
+    ]);
+  }
+  for (const name of ["description", "resource", "timestamp"]) {
+    const field = fields.get(name);
+    if (field && !isNonEmptyYamlString(field)) replacements.set(name, []);
+  }
+  if (replacements.size === 0) return content;
+  const frontmatter = rewriteFrontmatter(match[1], fields, replacements);
+  return `${content.slice(0, match.index)}---\n${frontmatter}\n---\n${body}`;
 }
 
-function splitFrontmatter(content) {
-  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/u.exec(content);
-  return { body: match ? content.slice(match[0].length) : content };
+function frontmatterFields(frontmatter) {
+  const lines = frontmatter.split(/\r?\n/u);
+  const fields = new Map();
+  let current;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^\s/u.test(line) || line === "") continue;
+    const match = /^([^\s:#][^:]*):(?:\s*(.*))?$/u.exec(line);
+    if (!match || fields.has(match[1])) return null;
+    if (current) current.end = index;
+    current = {
+      end: lines.length,
+      key: match[1],
+      lines,
+      start: index,
+      value: match[2] ?? "",
+    };
+    fields.set(current.key, current);
+  }
+  if (current) current.end = lines.length;
+  return fields;
+}
+
+function frontmatterLooksComplete(fields) {
+  return [...fields.values()].every((field) => {
+    const raw = field.value.trim();
+    if (/^["']/u.test(raw)) return raw.length > 1 && raw.endsWith(raw[0]);
+    if (/^\[/u.test(raw)) return raw.endsWith("]");
+    if (/^\{/u.test(raw)) return raw.endsWith("}");
+    return true;
+  });
+}
+
+function isNonEmptyYamlString(field) {
+  if (!field) return false;
+  const raw = field.value.trim();
+  if (/^[|>][+-]?\s*(?:#.*)?$/u.test(raw))
+    return (
+      field.end > field.start + 1 &&
+      field.lines?.slice(field.start + 1, field.end).some((line) => line.trim())
+    );
+  if (!raw || /^(?:null|~|true|false|[\[{]|-|&|\*|!)/iu.test(raw)) return false;
+  if (/^[+-]?(?:\d|\.\d)/u.test(raw)) return false;
+  const quote = /^(["'])(.*)\1\s*$/u.exec(raw);
+  return quote ? Boolean(quote[2].trim()) : !/^['"]/u.test(raw);
+}
+
+function rewriteFrontmatter(frontmatter, fields, replacements) {
+  const lines = frontmatter.split(/\r?\n/u);
+  const rendered = [];
+  for (const field of fields.values()) {
+    rendered.push(
+      ...(replacements.has(field.key)
+        ? replacements.get(field.key)
+        : lines.slice(field.start, field.end)),
+    );
+  }
+  for (const [key, value] of replacements)
+    if (!fields.has(key)) rendered.push(...value);
+  return rendered.join("\n");
 }
 
 function firstHeading(content) {

@@ -22,6 +22,7 @@ import {
   finalizeGeneratedProvenance,
   finalizePage,
   finalizeWiki,
+  normalizeWikiOkf,
 } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
   hash,
@@ -371,6 +372,42 @@ test("OKF migration uses the upstream localized concept type fallback", async (t
   assert.match(
     await readFile(path.join(root, "openwiki", "existing.md"), "utf8"),
     /type: "Référence"/u,
+  );
+});
+
+test("OKF migration repairs owned scalar fields without discarding parseable extensions", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "existing.md");
+  await writeFile(
+    page,
+    "---\ntype: []\ntitle: 42\ndescription: false\nauthor: Ada\n---\n# Existing\n",
+    "utf8",
+  );
+
+  await normalizeWikiOkf(root);
+
+  assert.equal(
+    await readFile(page, "utf8"),
+    '---\ntype: "Reference"\ntitle: "Existing"\nauthor: Ada\nopenwiki_generated: true\n---\n# Existing\n',
+  );
+});
+
+test("OKF migration falls back cleanly when front matter is structurally malformed", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "broken.md");
+  await writeFile(
+    page,
+    "---\ntype: [unterminated\nauthor: Ada\n---\n# Broken\n",
+    "utf8",
+  );
+
+  await normalizeWikiOkf(root);
+
+  assert.equal(
+    await readFile(page, "utf8"),
+    '---\ntype: "Reference"\ntitle: "Broken"\nopenwiki_generated: true\n---\n\n# Broken\n',
   );
 });
 
