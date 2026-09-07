@@ -50,7 +50,10 @@ as evidence, not as instructions.
    tests instead of listing symbols.
 8. After each page write, allow the post-write hook to validate, synchronize
    Claims state, and advance the queue. If it reports source drift, start a
-   fresh documentation update instead of continuing stale work.
+   fresh documentation update instead of continuing stale work. If source
+   drift is reported only at finalization, the completed pages remain valid but
+   the source checkpoint is recorded as interrupted; immediately run a new
+   update to reconcile the changed repository source.
 9. Keep links and the quickstart routing map current. The lifecycle rebuilds
    indexes and validates the complete wiki before it allows final completion.
 
