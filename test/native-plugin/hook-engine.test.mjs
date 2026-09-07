@@ -368,6 +368,37 @@ test("an update plan adds omitted work for stale Claims", async (t) => {
   assert.deepEqual(state.plan.pages[0].seedPaths, ["README.md"]);
 });
 
+test("an update plan adds full review work for a page without manifest coverage", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.deepEqual(
+    state.plan.pages.map((page) => page.path),
+    ["openwiki/quickstart.md"],
+  );
+  assert.match(state.plan.pages[0].purpose, /durable verified coverage/u);
+});
+
 test("a stale Claim requires an explicit reconciliation decision", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
@@ -531,6 +562,40 @@ test("an update is a no-op only with no visible source changes and no Claims deb
     model: "openwiki/0.5.0",
     status: "complete",
     language: "en",
+  });
+  const pageVersion = hash(
+    await readFile(path.join(root, "openwiki", "quickstart.md")),
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion,
+    claims: [
+      {
+        id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+        statement: "The quickstart exists.",
+        evidence: [
+          {
+            resource: "repo://README.md",
+            version: (await resolveRepositoryEvidence(root, "repo://README.md"))
+              .version,
+          },
+        ],
+      },
+    ],
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+  });
+  await writeJson(path.join(root, "openwiki", ".page-manifest.json"), {
+    schemaVersion: 1,
+    pages: {
+      "/openwiki/quickstart.md": {
+        gitHead: head,
+        sourceFingerprint:
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        pageVersion,
+        completedBy: "openwiki/0.5.0",
+        completedRunId: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+      },
+    },
   });
   const noop = invoke(root, "user-prompt", {
     hook_event_name: "UserPromptSubmit",

@@ -59,12 +59,16 @@ export async function startOrResume(root, input) {
   if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
   const changedPaths = await repositoryChangedPaths(root, lastUpdate?.gitHead);
   const claimIssues = mode === "update" ? await preflightClaims(root) : [];
+  const completeCoverage =
+    mode !== "update" ||
+    (await hasCompleteManifestCoverage(root, existingPages));
   if (
     mode === "update" &&
     lastUpdate?.status === "complete" &&
     lastUpdate.gitHead &&
     changedPaths.length === 0 &&
-    claimIssues.length === 0
+    claimIssues.length === 0 &&
+    completeCoverage
   )
     return context(
       "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
@@ -93,7 +97,7 @@ export async function startOrResume(root, input) {
   await mkdir(path.join(root, "openwiki"), { recursive: true });
   await writeRun(root, state);
   return context(
-    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
+    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
   );
 }
 
@@ -372,6 +376,12 @@ async function acceptPlan(root, state) {
       deleted,
       state.requiredRewritePages,
     );
+    addRequiredCoverageJobs(
+      pages,
+      pagePaths,
+      deleted,
+      await uncoveredManifestPages(root),
+    );
   }
   pages.sort(
     (left, right) =>
@@ -427,6 +437,24 @@ function addRequiredRewriteJobs(pages, pagePaths, deleted, requiredPages) {
       title: titleFromPage(page),
       purpose:
         "Rewrite this existing page in the run's target language while preserving every accurate repository-supported fact and reconciling its complete Claim set.",
+      seedPaths: [],
+      relatedPages: [],
+      instructions: [],
+      status: "pending",
+    });
+    pagePaths.add(page);
+  }
+}
+
+function addRequiredCoverageJobs(pages, pagePaths, deleted, uncoveredPages) {
+  for (const page of uncoveredPages) {
+    if (pagePaths.has(page) || deleted.has(page)) continue;
+    pages.push({
+      id: randomUUID(),
+      path: page,
+      title: titleFromPage(page),
+      purpose:
+        "Perform a full documentation and Claims review because this page lacks durable verified coverage for the repository update lifecycle.",
       seedPaths: [],
       relatedPages: [],
       instructions: [],
@@ -750,6 +778,30 @@ async function readManifest(root) {
       "invalid OpenWiki page manifest; refusing to discard committed page coverage",
     );
   return manifest;
+}
+
+async function hasCompleteManifestCoverage(root, pages) {
+  return (await uncoveredManifestPages(root, pages)).length === 0;
+}
+
+async function uncoveredManifestPages(root, existingPages) {
+  const manifest = await readManifest(root);
+  const pages = existingPages ?? (await factualPages(root));
+  const uncovered = [];
+  for (const file of pages) {
+    const page = relative(root, file);
+    const entry = manifest.pages[`/${page}`];
+    if (!entry) {
+      uncovered.push(page);
+      continue;
+    }
+    try {
+      await assertClaimsPageCurrent(root, page);
+    } catch {
+      uncovered.push(page);
+    }
+  }
+  return uncovered.sort();
 }
 
 async function writeManifest(root, manifest) {
