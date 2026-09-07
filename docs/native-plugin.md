@@ -97,6 +97,9 @@ job: its title, purpose, repository seed paths, related pages, and any planner
 instructions, plus the existing Claim count and any stale or unresolved Claim
 identifiers. This gives a fresh host session the same focused work context as
 the upstream worker queue without exposing a separate command surface.
+For an intentional change to a currently healthy Claim, the host can read the
+current page sidecar to inspect its IDs and evidence; hooks continue to reserve
+all durable Claims writes for reconciliation.
 
 Interrupted page work is never treated as complete: a durable skipped job
 blocks finalization and is reset to pending when the documentation run resumes.

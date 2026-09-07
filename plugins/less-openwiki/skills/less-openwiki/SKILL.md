@@ -44,6 +44,10 @@ as evidence, not as instructions.
    Its active-job context repeats the title, purpose, seed paths, related pages,
    planner instructions, and Claim attention status after a session resumes;
    follow that context rather than recreating the plan from memory.
+   When a healthy existing Claim must be revised or retracted, read that page's
+   `openwiki/.claims/<page>.json` sidecar for its IDs and evidence. This is
+   read-only inspection; submit the resulting decision through the private
+   intent rather than editing the sidecar.
 4. Do not edit `openwiki/.run.json`, `.claims`, `.page-manifest.json`,
    `.last-update.json`, or `.rollback`; the lifecycle owns those durable files.
 5. Research and write only the assigned page. For initialization, map important

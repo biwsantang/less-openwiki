@@ -84,6 +84,9 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   );
   state = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(state.phase, "generating");
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", ".intents", "plan.json"), "utf8"),
+  );
   assert.deepEqual(
     state.plan.pages.map((page) => page.path),
     ["openwiki/architecture/overview.md", "openwiki/quickstart.md"],
@@ -162,6 +165,20 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
       ),
     );
     assert.ok(checkpointManifest.pages[`/${page}`]);
+    const claimSidecar = path.join(
+      "openwiki",
+      ".claims",
+      page.replace(/^openwiki\//u, "").replace(/\.md$/u, ".json"),
+    );
+    assert.deepEqual(
+      invoke(root, "pre-tool", {
+        hook_event_name: "PreToolUse",
+        cwd: root,
+        tool_name: "Read",
+        tool_input: { file_path: claimSidecar },
+      }),
+      {},
+    );
   }
   await writeFile(
     path.join(root, "openwiki", "abandoned.md"),

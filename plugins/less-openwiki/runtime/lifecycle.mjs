@@ -174,6 +174,9 @@ export async function startOrResume(root, input) {
 export async function guardWrite(root, input) {
   const state = await loadRun(root);
   if (!state) return {};
+  // Lifecycle files are write-owned, but agents need to inspect a Claim's
+  // current identifiers and evidence before proposing a reconciliation.
+  if (!mayMutate(input)) return {};
   const source = await sourceSnapshot(root);
   if (source.fingerprint !== state.sourceFingerprint) {
     await invalidateForSourceDrift(root, state, source);
@@ -621,8 +624,8 @@ async function acceptPlan(root, state) {
   state.phase = "generating";
   state.plan = { pages, deletePages };
   await createRollback(root, state);
-  await rm(planIntentPath(root), { force: true });
   await writeRun(root, state);
+  await rm(planIntentPath(root), { force: true });
 }
 
 function planPage(raw) {
