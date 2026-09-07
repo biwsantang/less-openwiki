@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmod,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -202,6 +203,30 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.equal(architectureClaims.pageVersion, hash(architecture));
   assert.match(architecture, /broken internal link/u);
   assert.match(architecture, /```text/u);
+});
+
+test("the native hook runs from an isolated plugin package", async (t) => {
+  const root = await fixture(t);
+  const packageRoot = await mkdtemp(
+    path.join(os.tmpdir(), "less-openwiki-package-"),
+  );
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  const isolated = path.join(packageRoot, "less-openwiki");
+  await cp(path.dirname(path.dirname(engine)), isolated, { recursive: true });
+
+  const result = invoke(
+    root,
+    "user-prompt",
+    {
+      hook_event_name: "UserPromptSubmit",
+      cwd: root,
+      prompt: "Initialize repository documentation.",
+    },
+    path.join(isolated, "hooks", "less-openwiki-hook.mjs"),
+  );
+
+  assert.match(result.hookSpecificOutput.additionalContext, /plan intent/u);
+  await readFile(path.join(root, "openwiki", ".run.json"), "utf8");
 });
 
 test("repository evidence uses upstream V1 whole-file and relocating line-range versions", async (t) => {
@@ -1828,14 +1853,14 @@ async function writeJson(file, value) {
   await writeFile(file, `${JSON.stringify(value)}\n`, "utf8");
 }
 
-function invoke(cwd, action, input) {
-  const result = spawnSync(process.execPath, [engine, action], {
+function invoke(cwd, action, input, hook = engine) {
+  const result = spawnSync(process.execPath, [hook, action], {
     cwd,
     input: JSON.stringify(input),
     encoding: "utf8",
     env: {
       ...process.env,
-      CLAUDE_PLUGIN_ROOT: path.dirname(path.dirname(engine)),
+      CLAUDE_PLUGIN_ROOT: path.dirname(path.dirname(hook)),
     },
   });
   assert.equal(result.status, 0, result.stderr);
