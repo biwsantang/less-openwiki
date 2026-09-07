@@ -637,6 +637,23 @@ test("native OKF validation matches structured upstream metadata requirements", 
   );
 });
 
+test("OKF repair retains valid verifier events from a mixed YAML list", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "existing.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Existing\nverified:\n  - by: human/1.0\n    at: 2025-01-01T00:00:00Z\n  - by: invalid/1.0\n    at: not-a-date\n---\n# Existing\n",
+    "utf8",
+  );
+
+  await normalizePageOkf(root, "openwiki/existing.md");
+
+  const normalized = await readFile(page, "utf8");
+  assert.match(normalized, /by: human\/1\.0/u);
+  assert.doesNotMatch(normalized, /invalid\/1\.0/u);
+});
+
 test("a native checkpoint repairs authored OKF before Claims completion", async (t) => {
   const root = await fixture(t);
   invoke(root, "user-prompt", {

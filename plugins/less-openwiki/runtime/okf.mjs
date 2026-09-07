@@ -126,10 +126,20 @@ function repairOkfFrontmatter(content, file, conceptType) {
     const repaired = repairTags(tags);
     if (repaired) replacements.set("tags", repaired);
   }
-  for (const name of ["generated", "verified"]) {
-    const field = fields.get(name);
-    if (field && !isValidActorEvents(field, name === "verified"))
-      replacements.set(name, []);
+  const generated = fields.get("generated");
+  if (generated && !isValidActorEvents(generated, false))
+    replacements.set("generated", []);
+  const verified = fields.get("verified");
+  if (verified) {
+    const candidates = Array.isArray(verified.parsed)
+      ? verified.parsed
+      : [verified.parsed];
+    const valid = candidates.filter(isActorEvent);
+    if (valid.length !== candidates.length)
+      replacements.set(
+        "verified",
+        valid.length ? renderStructuredList("verified", valid) : [],
+      );
   }
   const sources = fields.get("sources");
   if (sources) {
