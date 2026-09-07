@@ -15,6 +15,7 @@ const requiredFiles = [
   path.join(pluginRoot, "runtime", "storage.mjs"),
   path.join(pluginRoot, "runtime", "lifecycle.mjs"),
   path.join(pluginRoot, "runtime", "claims.mjs"),
+  path.join(pluginRoot, "runtime", "evidence.mjs"),
   path.join(pluginRoot, "runtime", "okf.mjs"),
   path.join(root, ".agents", "plugins", "marketplace.json"),
   path.join(root, ".claude-plugin", "marketplace.json"),
@@ -27,8 +28,8 @@ for (const file of requiredFiles) {
 const codexManifest = await readJson(requiredFiles[0]);
 const claudeManifest = await readJson(requiredFiles[1]);
 const hooks = await readJson(requiredFiles[3]);
-const codexMarketplace = await readJson(requiredFiles[9]);
-const claudeMarketplace = await readJson(requiredFiles[10]);
+const codexMarketplace = await readJson(requiredFiles[10]);
+const claudeMarketplace = await readJson(requiredFiles[11]);
 
 assert(
   codexManifest.name === "less-openwiki",

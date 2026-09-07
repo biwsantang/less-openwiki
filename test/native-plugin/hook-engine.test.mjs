@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
 
 const engine = path.resolve(
   "plugins/less-openwiki/hooks/less-openwiki-hook.mjs",
@@ -64,9 +65,12 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     await writeIntent(root, page, "README.md");
     const absolute = path.join(root, page);
     await mkdir(path.dirname(absolute), { recursive: true });
+    const extra = page.includes("architecture")
+      ? "\n[Broken](missing.md)\n\n```mermaid\nflowchart TD\nend[broken]\n```\n"
+      : "";
     await writeFile(
       absolute,
-      `---\ntype: concept\ntitle: ${path.basename(page, ".md")}\ndescription: Fixture documentation.\n---\n\n# Fixture\n`,
+      `---\ntype: concept\ntitle: ${path.basename(page, ".md")}\ndescription: Fixture documentation.\n---\n\n# Fixture\n${extra}`,
       "utf8",
     );
     const result = invoke(root, "post-tool", {
@@ -97,6 +101,78 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
     /generated:/u,
   );
+  const architecture = await readFile(
+    path.join(root, "openwiki", "architecture", "overview.md"),
+    "utf8",
+  );
+  assert.match(architecture, /broken internal link/u);
+  assert.match(architecture, /```text/u);
+});
+
+test("repository evidence uses upstream V1 whole-file and relocating line-range versions", async (t) => {
+  const root = await fixture(t);
+  await writeFile(
+    path.join(root, "source.ts"),
+    "before\nselected\nafter\n",
+    "utf8",
+  );
+  const whole = await resolveRepositoryEvidence(root, "repo://source.ts");
+  assert.match(whole.version, /^repo-file-v1:sha256:[a-f0-9]{64}$/u);
+  const ranged = await resolveRepositoryEvidence(
+    root,
+    "repo://source.ts#L2-L2",
+  );
+  assert.match(ranged.version, /^repo-lines-v1:sha256:[a-f0-9]{64}:/u);
+  await writeFile(
+    path.join(root, "source.ts"),
+    "new\nbefore\nselected\nafter\n",
+    "utf8",
+  );
+  const relocated = await resolveRepositoryEvidence(
+    root,
+    "repo://source.ts#L2-L2",
+    ranged.version,
+  );
+  assert.equal(relocated.version, ranged.version);
+  assert.equal(relocated.content, "selected\n");
+});
+
+test("a changed documentation language requires every existing factual page to be planned", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Existing.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    model: "codex",
+    status: "complete",
+    language: "en",
+  });
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    language: "fr",
+    pages: [
+      {
+        path: "architecture.md",
+        title: "Architecture",
+        purpose: "Wrong incomplete plan.",
+      },
+    ],
+  });
+  const rejected = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  assert.match(rejected.systemMessage, /language change requires/u);
 });
 
 test("source content drift is detected even when Git status stays modified", async (t) => {

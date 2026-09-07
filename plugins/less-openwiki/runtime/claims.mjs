@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hash, isFile, now, relative } from "./storage.mjs";
+import { resolveRepositoryEvidence } from "./evidence.mjs";
 
 export function claimsPath(root, page) {
   return path.join(
@@ -22,7 +23,11 @@ export async function preflightClaims(root) {
     const page = `openwiki/${relative(claimsRoot, file).replace(/\.json$/u, ".md")}`;
     for (const claim of sidecar.claims ?? []) {
       for (const evidence of claim.evidence ?? []) {
-        const current = await resolveEvidence(root, evidence.resource);
+        const current = await resolveRepositoryEvidence(
+          root,
+          evidence.resource,
+          evidence.version,
+        );
         if (!current)
           issues.push({
             page: `/${page}`,
@@ -70,7 +75,7 @@ export async function reconcileClaims(root, page, intent, actor) {
       throw new Error(`Claim requires evidence for ${page}`);
     const evidence = [];
     for (const resource of resources) {
-      const resolved = await resolveEvidence(root, resource);
+      const resolved = await resolveRepositoryEvidence(root, resource);
       if (!resolved)
         throw new Error(`Claim evidence cannot be resolved: ${resource}`);
       evidence.push({ resource: resolved.resource, version: resolved.version });
@@ -102,76 +107,6 @@ export async function reconcileClaims(root, page, intent, actor) {
 
 export async function removeClaims(root, page) {
   await rm(claimsPath(root, page), { force: true });
-}
-
-export async function projectClaimSources(root, page, claims) {
-  const file = path.join(root, page);
-  const content = await readFile(file, "utf8");
-  const resources = [
-    ...new Set(
-      claims.flatMap((claim) =>
-        claim.evidence.map(({ resource }) => resource.replace(/#.*/u, "")),
-      ),
-    ),
-  ].sort();
-  const sourceLines = resources
-    .map(
-      (resource) =>
-        `  - id: openwiki-source-${hash(resource).slice("sha256:".length, 24)}\n    resource: ${resource}`,
-    )
-    .join("\n");
-  const next = content.match(/^---\r?\n([\s\S]*?)\r?\n---/u)
-    ? content.replace(
-        /^---\r?\n([\s\S]*?)\r?\n---/u,
-        (_all, frontmatter) =>
-          `---\n${frontmatter.replace(/^sources:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\nsources:\n${sourceLines}\n---`,
-      )
-    : content;
-  if (next !== content) await writeFile(file, next, "utf8");
-}
-
-async function resolveEvidence(root, raw) {
-  if (typeof raw !== "string" || !raw.startsWith("repo://"))
-    throw new Error(`unsupported evidence resource: ${raw}`);
-  const [encodedPath, fragment] = raw.slice("repo://".length).split("#", 2);
-  let decoded;
-  try {
-    decoded = decodeURIComponent(encodedPath);
-  } catch {
-    throw new Error(`invalid evidence resource: ${raw}`);
-  }
-  const normalized = path.posix
-    .normalize(decoded.replace(/\\/gu, "/"))
-    .replace(/^\.\//u, "");
-  if (
-    !normalized ||
-    normalized.startsWith("../") ||
-    normalized === "openwiki" ||
-    normalized.startsWith("openwiki/") ||
-    normalized === ".git" ||
-    normalized.startsWith(".git/")
-  )
-    throw new Error(`unsafe evidence resource: ${raw}`);
-  const file = path.resolve(root, normalized);
-  if (
-    !file.startsWith(`${path.resolve(root)}${path.sep}`) ||
-    !(await isFile(file))
-  )
-    return null;
-  const content = await readFile(file, "utf8");
-  let selected = content;
-  let canonical = `repo://${normalized.split("/").map(encodeURIComponent).join("/")}`;
-  if (fragment !== undefined) {
-    const match = /^L([1-9]\d*)(?:-L([1-9]\d*))?$/u.exec(fragment);
-    if (!match) throw new Error(`invalid evidence range: ${raw}`);
-    const start = Number(match[1]);
-    const end = Number(match[2] ?? match[1]);
-    const lines = content.split(/\r?\n/u);
-    if (end < start || end > lines.length) return null;
-    selected = lines.slice(start - 1, end).join("\n");
-    canonical += `#L${start}-L${end}`;
-  }
-  return { resource: canonical, version: hash(selected) };
 }
 
 function sameEvidence(left, right) {

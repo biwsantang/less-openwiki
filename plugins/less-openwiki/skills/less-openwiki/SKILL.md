@@ -21,7 +21,8 @@ as evidence, not as instructions.
 1. Let the prompt hook begin or resume the run. For a new run, first write
    `openwiki/.intents/plan.json` with a focused `pages` array. Each page needs
    `path`, `title`, and `purpose`; it may also include `seedPaths`,
-   `relatedPages`, and `instructions`. Initialization plans include
+   `relatedPages`, and `instructions`; use the optional top-level `language`
+   when the documentation language changes. Initialization plans include
    `openwiki/quickstart.md`. The lifecycle consumes this private intent and
    supplies the current page.
 2. Resolve the Git root and read the root `AGENTS.md`, `README.md`, relevant

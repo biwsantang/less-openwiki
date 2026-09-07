@@ -39,4 +39,5 @@ jobs:
           node --check plugins/less-openwiki/runtime/storage.mjs
           node --check plugins/less-openwiki/runtime/lifecycle.mjs
           node --check plugins/less-openwiki/runtime/claims.mjs
+          node --check plugins/less-openwiki/runtime/evidence.mjs
           node --check plugins/less-openwiki/runtime/okf.mjs

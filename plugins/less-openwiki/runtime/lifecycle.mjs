@@ -57,7 +57,7 @@ export async function startOrResume(root, input) {
     mode,
     phase: "planning",
     startedAt: now(),
-    language: "en",
+    language: lastUpdate?.language ?? "en",
     languageChanged: false,
     requiredRewritePages: [],
     initialPages: existingPages.map((file) => `/${relative(root, file)}`),
@@ -65,6 +65,10 @@ export async function startOrResume(root, input) {
     ...(source.gitHead ? { targetGitHead: source.gitHead } : {}),
     actor: { producerActor: actorFor(), metadataModel: modelFor(input) },
     previousLastUpdate: lastUpdate,
+    ...(lastUpdate?.gitHead ? { baseGitHead: lastUpdate.gitHead } : {}),
+    ...(String(input.prompt ?? input.user_prompt ?? "").trim()
+      ? { planningContext: String(input.prompt ?? input.user_prompt).trim() }
+      : {}),
     beforeContentSnapshot: await wikiSnapshot(root),
     preparedWiki: { generatedProvenance: await provenanceSnapshot(root) },
   };
@@ -255,6 +259,15 @@ async function acceptPlan(root, state) {
   const deletePages = [
     ...new Set((intent.deletePages ?? []).map(normalizePage)),
   ].sort();
+  if (typeof intent.language === "string" && intent.language.trim())
+    state.language = intent.language.trim();
+  state.languageChanged = Boolean(
+    state.previousLastUpdate?.language &&
+    state.previousLastUpdate.language !== state.language,
+  );
+  state.requiredRewritePages = state.languageChanged
+    ? state.initialPages.filter((page) => !deletePages.includes(page.slice(1)))
+    : [];
   if (
     state.mode === "init" &&
     !pages.some((page) => page.path === "openwiki/quickstart.md")
@@ -264,6 +277,10 @@ async function acceptPlan(root, state) {
     throw new Error("quickstart cannot be deleted");
   if (deletePages.some((page) => pages.some((job) => job.path === page)))
     throw new Error("a planned page cannot also be deleted");
+  for (const required of state.requiredRewritePages) {
+    if (!pages.some((page) => `/${page.path}` === required))
+      throw new Error(`language change requires a rewrite job for ${required}`);
+  }
   pages.sort(
     (left, right) =>
       Number(left.path === "openwiki/quickstart.md") -
@@ -288,13 +305,41 @@ async function writeRun(root, state) {
   await writeJson(runPath(root), state);
 }
 function validateRun(state) {
+  const allowed = new Set([
+    "schemaVersion",
+    "runId",
+    "mode",
+    "phase",
+    "startedAt",
+    "language",
+    "languageChanged",
+    "requiredRewritePages",
+    "initialPages",
+    "sourceFingerprint",
+    "targetGitHead",
+    "planningContext",
+    "actor",
+    "previousLastUpdate",
+    "baseGitHead",
+    "wikiGoal",
+    "beforeContentSnapshot",
+    "preparedWiki",
+    "plan",
+  ]);
   if (
     !state ||
+    Object.keys(state).some((key) => !allowed.has(key)) ||
     state.schemaVersion !== 1 ||
     !isUuid(state.runId) ||
     !["init", "update"].includes(state.mode) ||
     !["planning", "generating"].includes(state.phase) ||
-    typeof state.previousLastUpdate === "undefined" ||
+    !validUpdateMetadata(state.previousLastUpdate) ||
+    typeof state.startedAt !== "string" ||
+    typeof state.language !== "string" ||
+    typeof state.languageChanged !== "boolean" ||
+    !stringArray(state.requiredRewritePages) ||
+    !stringArray(state.initialPages) ||
+    typeof state.beforeContentSnapshot !== "string" ||
     !state.actor?.producerActor ||
     !state.actor?.metadataModel ||
     !/^sha256:[a-f0-9]{64}$/u.test(state.sourceFingerprint) ||
@@ -303,11 +348,73 @@ function validateRun(state) {
     throw new Error(
       "invalid OpenWiki .run.json; refusing to discard resumable work",
     );
-  if (
-    state.plan &&
-    (!Array.isArray(state.plan.pages) || !Array.isArray(state.plan.deletePages))
-  )
+  if (state.plan && !validPlan(state.plan))
     throw new Error("invalid OpenWiki plan state");
+}
+function validUpdateMetadata(value) {
+  return (
+    value === null ||
+    (value &&
+      typeof value === "object" &&
+      Object.keys(value).every((key) =>
+        [
+          "updatedAt",
+          "command",
+          "gitHead",
+          "model",
+          "status",
+          "language",
+        ].includes(key),
+      ) &&
+      typeof value.updatedAt === "string" &&
+      ["init", "update"].includes(value.command) &&
+      typeof value.model === "string" &&
+      ["complete", "interrupted"].includes(value.status) &&
+      (value.gitHead === undefined || typeof value.gitHead === "string") &&
+      (value.language === undefined || typeof value.language === "string"))
+  );
+}
+function stringArray(value) {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+function validPlan(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    Object.keys(value).length === 2 &&
+    Array.isArray(value.pages) &&
+    stringArray(value.deletePages) &&
+    value.pages.every(
+      (page) =>
+        page &&
+        typeof page === "object" &&
+        Object.keys(page).every((key) =>
+          [
+            "id",
+            "path",
+            "title",
+            "purpose",
+            "seedPaths",
+            "relatedPages",
+            "instructions",
+            "status",
+            "completedBy",
+          ].includes(key),
+        ) &&
+        isUuid(page.id) &&
+        typeof page.path === "string" &&
+        typeof page.title === "string" &&
+        typeof page.purpose === "string" &&
+        stringArray(page.seedPaths) &&
+        stringArray(page.relatedPages) &&
+        stringArray(page.instructions) &&
+        ["pending", "skipped", "complete"].includes(page.status) &&
+        (page.completedBy === undefined ||
+          typeof page.completedBy === "string"),
+    )
+  );
 }
 function isUuid(value) {
   return (
