@@ -61,6 +61,11 @@ format-conversion step. The same deterministic repair runs before each page
 checkpoint and finalization, before Claims and page-manifest coverage become
 durable.
 
+At every checkpoint and final completion, the lifecycle validates the full OKF
+metadata contract—not only the presence of a page type. This includes structured
+YAML, provenance and verification events, source mappings, tags, lifecycle
+status, and absolute timestamps.
+
 If repository source changes after all page jobs have been checkpointed, the
 finalizer still validates and preserves the completed documentation. It retains
 the run's planned source checkpoint and records `.last-update.json` as

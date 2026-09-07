@@ -24,6 +24,9 @@ jobs:
       - name: Enable package manager
         run: corepack enable
 
+      - name: Install locked toolchain
+        run: pnpm install --frozen-lockfile
+
       - name: Validate plugin package
         run: |
           pnpm plugin:validate

@@ -24,6 +24,9 @@ jobs:
       - name: Enable package manager
         run: corepack enable
 
+      - name: Install locked toolchain
+        run: pnpm install --frozen-lockfile
+
       - name: Validate manifests, skill, hooks, and documentation
         run: pnpm plugin:validate
 
@@ -44,3 +47,4 @@ jobs:
           node --check plugins/less-openwiki/runtime/claims.mjs
           node --check plugins/less-openwiki/runtime/evidence.mjs
           node --check plugins/less-openwiki/runtime/okf.mjs
+          node --check plugins/less-openwiki/runtime/vendor/yaml.mjs
