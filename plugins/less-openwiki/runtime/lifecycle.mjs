@@ -291,6 +291,14 @@ export async function finish(root) {
       stopReason: `Documentation remains incomplete: ${current.path}.`,
       systemMessage: `Less OpenWiki requires the assigned page before completion. ${pendingSummary(state)}`,
     };
+  const skipped = state.plan.pages.find((page) => page.status === "skipped");
+  if (skipped)
+    return {
+      continue: false,
+      stopReason: `Documentation must resume skipped work: ${skipped.path}.`,
+      systemMessage:
+        "Less OpenWiki will retry skipped documentation work when the run resumes.",
+    };
   const sourceChangedBeforeFinish =
     (await sourceSnapshot(root)).fingerprint !== state.sourceFingerprint;
   await removeAbandonedGeneratedPages(root, state);
@@ -394,8 +402,19 @@ async function resumeActiveRun(root, state) {
       "Repository source changed since this documentation run started. Write a fresh semantic plan before generated Markdown.",
     );
   }
-  if (await reconcileManifestPageJobs(root, state)) await writeRun(root, state);
+  const resetSkipped = resetSkippedPageJobs(state);
+  const reconciled = await reconcileManifestPageJobs(root, state);
+  if (resetSkipped || reconciled) await writeRun(root, state);
   return sessionContext(root);
+}
+
+function resetSkippedPageJobs(state) {
+  if (state.phase !== "generating" || !state.plan) return false;
+  if (!state.plan.pages.some((page) => page.status === "skipped")) return false;
+  state.plan.pages = state.plan.pages.map((page) =>
+    page.status === "skipped" ? { ...page, status: "pending" } : page,
+  );
+  return true;
 }
 
 /**

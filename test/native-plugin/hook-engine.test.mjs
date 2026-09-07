@@ -1954,6 +1954,45 @@ test("a resumed run recovers a checkpointed page from durable manifest coverage"
   assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.2.0");
 });
 
+test("a resumed run retries a durable skipped page", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const runFile = path.join(root, "openwiki", ".run.json");
+  const interrupted = JSON.parse(await readFile(runFile, "utf8"));
+  interrupted.plan.pages[0].status = "skipped";
+  await writeJson(runFile, interrupted);
+
+  const stopped = invoke(root, "stop", { hook_event_name: "Stop", cwd: root });
+  assert.match(stopped.stopReason, /skipped work/u);
+  const resumed = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Resume documentation.",
+  });
+  assert.match(
+    resumed.hookSpecificOutput.additionalContext,
+    /Current page: openwiki\/quickstart\.md/u,
+  );
+  assert.equal(
+    JSON.parse(await readFile(runFile, "utf8")).plan.pages[0].status,
+    "pending",
+  );
+});
+
 test("source drift invalidates a durable queue and returns the run to planning", async (t) => {
   const root = await fixture(t);
   invoke(root, "user-prompt", {

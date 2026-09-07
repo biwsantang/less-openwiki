@@ -74,6 +74,11 @@ instructions, plus the existing Claim count and any stale or unresolved Claim
 identifiers. This gives a fresh host session the same focused work context as
 the upstream worker queue without exposing a separate command surface.
 
+Interrupted page work is never treated as complete: a durable skipped job
+blocks finalization and is reset to pending when the documentation run resumes.
+That makes the next active page explicit instead of allowing a partial run to
+publish as complete.
+
 Before an update begins, the lifecycle normalizes any factual page that lacks
 usable OKF front matter into a minimal, explicitly code-derived record. Existing
 usable metadata remains unchanged, so the update can enrich it without a manual
