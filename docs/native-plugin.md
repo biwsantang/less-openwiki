@@ -23,11 +23,11 @@ The hook engine runs at the native lifecycle points supplied by each host:
 
 | Event                                 | Outcome                                                                                                   |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                                              |
-| `PreToolUse`                          | Protect lifecycle state, bootstrap a delegated plan write, and permit only the plan or current page work. |
-| `PostToolUse`                         | Consume semantic intent, validate, reconcile Claims, and checkpoint progress.                             |
-| `Stop`                                | Finalize valid queued work; restore skipped snapshots as an interrupted run.                              |
-| `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                                                   |
+| `SessionStart` and `UserPromptSubmit` | Load or begin the run when the session itself has a Git worktree.                                         |
+| `PreToolUse`                          | Resolve an explicit OpenWiki file target, bind a projectless task, protect state, and bootstrap planning. |
+| `PostToolUse`                         | Consume semantic intent, validate, reconcile Claims, and checkpoint the bound worktree.                   |
+| `Stop`                                | Finalize valid queued work for the session-bound worktree.                                                |
+| `SessionEnd`                          | Persist an interrupted checkpoint and clear the ephemeral session binding.                                |
 
 The hook adapter is intentionally thin. It invokes three ordinary internal
 modules: lifecycle (state, planning, snapshot, checkpoint and rollback),
@@ -41,6 +41,24 @@ generated documentation page. Durable repository outputs are:
 - `openwiki/.claims/` for page grounding state;
 - `openwiki/.page-manifest.json` for completed-page coverage; and
 - `openwiki/.last-update.json` after completion or interruption.
+
+### Projectless tasks and target binding
+
+Codex supplies hooks with the task's session CWD, which may be a projectless
+folder even when the agent later edits a repository elsewhere. For a
+projectless task, Less OpenWiki deliberately does not select a repository from
+prompt text or by parsing shell commands. Its first structured edit of an
+absolute `openwiki/.intents/plan.json` path resolves one Git worktree, starts
+the lifecycle there, and creates an owner-only temporary session binding from
+the host session ID to that run. Post-tool, stop, and session-end events use
+that binding. It is cleared when the run completes or the session ends and
+expires if left behind after a host crash.
+
+An operation that targets multiple Git worktrees, escapes the chosen
+`openwiki/` directory through a symlink, or mixes source edits with OpenWiki
+writes is denied before it can create lifecycle state. A projectless task can
+therefore safely document one explicitly selected repository without a CLI,
+MCP server, daemon, or global “current repository” setting.
 
 At the same startup boundary, the runtime maintains upstream-compatible
 `<!-- OPENWIKI:START -->` / `<!-- OPENWIKI:END -->` blocks in root `AGENTS.md`
@@ -59,6 +77,13 @@ For updates, the plan may intentionally omit pages: the lifecycle deterministica
 adds work required to reconcile stale Claims and to complete a language rewrite.
 They are removed at checkpoints and never become documentation output. The
 skill does not edit durable lifecycle files directly.
+
+If a repository contains private intents but no `.run.json`, those files were
+never accepted lifecycle state. The first repair activation snapshots them in
+`openwiki/.recovery/<run-id>/` and starts a `repair` planning run. The agent
+must submit a fresh semantic plan; old intents are evidence for recovery, not
+trusted instructions that can be silently consumed. Existing factual pages are
+retained for validation and Claims reconstruction.
 
 An explicit initialize or reinitialize request replaces existing generated wiki
 state (pages, indexes, logs, sidecars, and lifecycle metadata) with a clean

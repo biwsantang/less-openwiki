@@ -15,6 +15,7 @@ component that enforces it.
 | OKF repair, provenance, verification, sources, links, Mermaid fallback, and indexes | `okf.mjs`                                                                                   | Structured YAML/OKF, provenance, link, Mermaid, and finalization cases |
 | Abandoned page work                                                                 | `{ "action": "skip" }` private page intent, rollback snapshot, and interrupted finalization | Existing-page and newly-planned-page skip cases                        |
 | Root coding-agent guidance                                                          | Marker-owned `AGENTS.md` and `CLAUDE.md` setup performed before a new run                   | Setup, preservation, malformed-marker, and write-ownership cases       |
+| Projectless task targeting and stale draft recovery                                 | Structured target resolver, temporary session binding, and `repair` lifecycle mode          | Projectless activation, ambiguous-root, and repair-candidate cases     |
 | Codex and Claude Code lifecycle integration                                         | Shared hook adapter plus both plugin manifests and marketplaces                             | Native plugin, Codex, and Claude validation commands                   |
 
 ## Native boundary

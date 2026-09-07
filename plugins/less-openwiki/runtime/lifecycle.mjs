@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, realpathSync } from "node:fs";
 import {
   cp,
   lstat,
@@ -52,6 +53,7 @@ import {
 } from "./okf.mjs";
 import { OPENWIKI_PRODUCER_ACTOR } from "./identity.mjs";
 import { ensureCodeModeAgentSnippets, isManagedAgentFile } from "./setup.mjs";
+import { bindSession } from "./session-binding.mjs";
 
 export async function sessionContext(root) {
   const state = await loadRun(root);
@@ -81,12 +83,16 @@ export async function startOrResume(root, input) {
       throw new Error(
         `an interrupted documentation run uses ${existing.language}; resume it before changing the language to ${requestedLanguage}`,
       );
+    await bindSession(root, input, existing.runId);
     return resumeActiveRun(root, existing);
   }
   const discoveredPages = await factualPages(root);
+  const repair = await hasUnmanagedIntents(root);
   const mode =
-    requestedMode ?? (discoveredPages.length === 0 ? "init" : "update");
+    requestedMode ??
+    (repair ? "repair" : discoveredPages.length === 0 ? "init" : "update");
   const existingPages = mode === "init" ? [] : discoveredPages;
+  const planningMode = mode === "repair" ? "update" : mode;
   let source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
   const replacement =
@@ -101,7 +107,7 @@ export async function startOrResume(root, input) {
     )
       await seedManifestCoverage(root, existingPages, lastUpdate.gitHead);
     let { pageUpdateWindows, changedPaths, claimIssues, completeCoverage } =
-      await updatePlanningState(root, mode, existingPages);
+      await updatePlanningState(root, planningMode, existingPages);
     if (
       mode === "update" &&
       lastUpdate?.status === "complete" &&
@@ -130,9 +136,12 @@ export async function startOrResume(root, input) {
       ({ pageUpdateWindows, changedPaths, claimIssues, completeCoverage } =
         await updatePlanningState(root, mode, existingPages));
     }
+    const runId = randomUUID();
+    const recovery =
+      mode === "repair" ? await archiveUnmanagedIntents(root, runId) : null;
     const state = {
       schemaVersion: 1,
-      runId: randomUUID(),
+      runId,
       mode,
       phase: "planning",
       startedAt: now(),
@@ -159,6 +168,7 @@ export async function startOrResume(root, input) {
     };
     await mkdir(path.join(root, "openwiki"), { recursive: true });
     await writeRun(root, state);
+    await bindSession(root, input, state.runId);
     await writeJson(lastUpdatePath(root), {
       updatedAt: now(),
       command: state.mode,
@@ -169,7 +179,7 @@ export async function startOrResume(root, input) {
     });
     await replacement?.commit();
     return context(
-      `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.${wikiGoalContext(state)}`,
+      `Documentation ${mode === "repair" ? "repair " : ""}run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. ${recovery ? "Unmanaged private intents were preserved for review and are not accepted as lifecycle state. " : ""}First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.${wikiGoalContext(state)}`,
     );
   } catch (error) {
     await replacement?.rollback();
@@ -180,12 +190,13 @@ export async function startOrResume(root, input) {
 export async function guardWrite(root, input) {
   let state = await loadRun(root);
   const targets = extractTargets(input, root);
+  let activation;
   // Delegated Codex tasks receive their work as a handoff rather than a user
   // prompt, so they can legitimately miss UserPromptSubmit. The first plan
   // write is an unambiguous native lifecycle boundary; bootstrap it here while
   // the trusted PreToolUse hook is active.
   if (!state && mayMutate(input) && targets.includes(planIntentPath(root))) {
-    await startOrResume(root, input);
+    activation = await startOrResume(root, input);
     state = await loadRun(root);
     if (!state)
       return deny(
@@ -217,7 +228,7 @@ export async function guardWrite(root, input) {
     );
   if (targets.includes(planIntentPath(root)))
     return state.phase === "planning"
-      ? {}
+      ? (activation ?? {})
       : deny("The documentation plan has already been accepted for this run.");
   const privateIntent = targets.find((target) =>
     target.startsWith(`${intentRoot(root)}${path.sep}`),
@@ -593,6 +604,31 @@ async function beginInitWikiReplacement(root) {
   return { commit: cleanup, rollback };
 }
 
+/**
+ * Intents without a .run.json were never accepted by the lifecycle. Preserve
+ * them before the first repair plan replaces the namespace; recovery must be
+ * explicit rather than treating arbitrary draft JSON as durable state.
+ */
+async function archiveUnmanagedIntents(root, runId) {
+  const intents = intentRoot(root);
+  if (!(await isDirectory(intents))) return null;
+  const destination = path.join(
+    root,
+    "openwiki",
+    ".recovery",
+    runId,
+    "intents",
+  );
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(intents, destination, {
+    preserveTimestamps: true,
+    recursive: true,
+    verbatimSymlinks: true,
+  });
+  await rm(intents, { recursive: true, force: true });
+  return destination;
+}
+
 async function reconcileManifestPageJobs(root, state) {
   if (state.phase !== "generating") return false;
   const manifest = await readManifest(root);
@@ -676,7 +712,7 @@ async function acceptPlan(root, state) {
     throw new Error("quickstart cannot be deleted");
   if (deletePages.some((page) => pages.some((job) => job.path === page)))
     throw new Error("a planned page cannot also be deleted");
-  if (state.mode === "update") {
+  if (state.mode === "update" || state.mode === "repair") {
     const pagePaths = new Set(pages.map((page) => page.path));
     const deleted = new Set(deletePages);
     addRequiredClaimIssueJobs(
@@ -874,7 +910,12 @@ function primaryLanguage(language) {
 }
 
 function requestedRunMode(input) {
-  if (input.mode === "init" || input.mode === "update") return input.mode;
+  if (
+    input.mode === "init" ||
+    input.mode === "update" ||
+    input.mode === "repair"
+  )
+    return input.mode;
   const prompt = String(input.prompt ?? input.user_prompt ?? "");
   if (
     /\b(?:re-?initialize|re-?initialise|initialize|initialise|start\s+(?:the\s+)?wiki\s+(?:over|from\s+scratch)|replace\s+(?:the\s+)?(?:openwiki|wiki|documentation))\b/iu.test(
@@ -889,6 +930,15 @@ function requestedRunMode(input) {
   )
     return "update";
   return undefined;
+}
+
+async function hasUnmanagedIntents(root) {
+  const intents = intentRoot(root);
+  if (!(await isDirectory(intents))) return false;
+  const { readdir } = await import("node:fs/promises");
+  return (await readdir(intents, { withFileTypes: true })).some(
+    (entry) => entry.isFile() && entry.name.endsWith(".json"),
+  );
 }
 
 function requestedInputLanguage(input) {
@@ -960,7 +1010,7 @@ function validateRun(state) {
     Object.keys(state).some((key) => !allowed.has(key)) ||
     state.schemaVersion !== 1 ||
     !isUuid(state.runId) ||
-    !["init", "update"].includes(state.mode) ||
+    !["init", "update", "repair"].includes(state.mode) ||
     !["planning", "generating"].includes(state.phase) ||
     !validUpdateMetadata(state.previousLastUpdate) ||
     !nonEmptyString(state.startedAt) ||
@@ -999,7 +1049,7 @@ function validUpdateMetadata(value) {
         ].includes(key),
       ) &&
       nonEmptyString(value.updatedAt) &&
-      ["init", "update"].includes(value.command) &&
+      ["init", "update", "repair"].includes(value.command) &&
       nonEmptyString(value.model) &&
       ["complete", "interrupted"].includes(value.status) &&
       optionalNonEmptyString(value.gitHead) &&
@@ -1657,10 +1707,26 @@ function extractTargets(input, root) {
   return [
     ...new Set(
       raw
-        .map((candidate) => path.resolve(root, candidate))
+        .map((candidate) => canonicalTarget(path.resolve(root, candidate)))
         .filter((candidate) => candidate.startsWith(`${root}${path.sep}`)),
     ),
   ];
+}
+function canonicalTarget(candidate) {
+  let existing = candidate;
+  while (!existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return candidate;
+    existing = parent;
+  }
+  try {
+    return path.join(
+      realpathSync(existing),
+      path.relative(existing, candidate),
+    );
+  } catch {
+    return candidate;
+  }
 }
 function ownedState(root, target) {
   return (

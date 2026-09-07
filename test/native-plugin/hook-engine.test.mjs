@@ -162,7 +162,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     assert.match(result.hookSpecificOutput.additionalContext, /Recorded/u);
     assert.match(
       await readFile(absolute, "utf8"),
-      /verified:\n\s+- by: openwiki\/0\.3\.0/u,
+      /verified:\n\s+- by: openwiki\/0\.4\.0/u,
     );
     const checkpointManifest = JSON.parse(
       await readFile(
@@ -224,7 +224,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.match(quickstart, new RegExp(`at: ${startedAt}`, "u"));
   assert.match(
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
-    /verified:\n\s+- by: openwiki\/0\.3\.0/u,
+    /verified:\n\s+- by: openwiki\/0\.4\.0/u,
   );
   assert.equal(
     await readFile(path.join(root, "openwiki", "index.md"), "utf8"),
@@ -252,6 +252,175 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.match(architecture, /```text/u);
 });
 
+test("a projectless task binds its first explicit OpenWiki plan edit to one repository", async (t) => {
+  const root = await fixture(t);
+  const projectless = await mkdtemp(
+    path.join(os.tmpdir(), "less-openwiki-projectless-"),
+  );
+  t.after(() => rm(projectless, { recursive: true, force: true }));
+  const sessionId = "projectless-plan-session";
+  const planFile = path.join(root, "openwiki", ".intents", "plan.json");
+
+  const pre = invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: planFile },
+  });
+  assert.match(pre.hookSpecificOutput.additionalContext, /run .* started/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+
+  await writeJson(planFile, {
+    pages: [
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Route contributors.",
+      },
+    ],
+  });
+  const post = invoke(projectless, "post-tool", {
+    hook_event_name: "PostToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: planFile },
+  });
+  assert.match(post.hookSpecificOutput.additionalContext, /accepted/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "generating",
+  );
+
+  invoke(projectless, "session-end", {
+    hook_event_name: "SessionEnd",
+    session_id: sessionId,
+    cwd: projectless,
+  });
+  assert.equal(
+    JSON.parse(
+      await readFile(path.join(root, "openwiki", ".last-update.json"), "utf8"),
+    ).status,
+    "interrupted",
+  );
+});
+
+test("projectless activation preserves unowned intents as repair candidates", async (t) => {
+  const root = await fixture(t);
+  const projectless = await mkdtemp(
+    path.join(os.tmpdir(), "less-openwiki-projectless-"),
+  );
+  t.after(() => rm(projectless, { recursive: true, force: true }));
+  const planFile = path.join(root, "openwiki", ".intents", "plan.json");
+  await writeJson(planFile, { pages: [] });
+
+  const pre = invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: "repair-session",
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: planFile },
+  });
+  assert.match(pre.hookSpecificOutput.additionalContext, /repair run/u);
+  const state = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(state.mode, "repair");
+  await assert.rejects(readFile(planFile, "utf8"));
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          "openwiki",
+          ".recovery",
+          state.runId,
+          "intents",
+          "plan.json",
+        ),
+        "utf8",
+      ),
+    ),
+    { pages: [] },
+  );
+});
+
+test("projectless OpenWiki edits spanning repositories are denied", async (t) => {
+  const first = await fixture(t);
+  const second = await fixture(t);
+  const projectless = await mkdtemp(
+    path.join(os.tmpdir(), "less-openwiki-projectless-"),
+  );
+  t.after(() => rm(projectless, { recursive: true, force: true }));
+  const output = invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: "ambiguous-session",
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: {
+      patch: `*** Begin Patch\n*** Add File: ${path.join(first, "openwiki", ".intents", "plan.json")}\n+{}\n*** Add File: ${path.join(second, "openwiki", ".intents", "plan.json")}\n+{}\n*** End Patch`,
+    },
+  });
+  assert.match(
+    output.hookSpecificOutput.permissionDecisionReason,
+    /multiple Git worktrees/u,
+  );
+  await assert.rejects(readFile(path.join(first, "openwiki", ".run.json")));
+  await assert.rejects(readFile(path.join(second, "openwiki", ".run.json")));
+});
+
+test("a bound projectless task cannot switch repositories or mix source with documentation", async (t) => {
+  const first = await fixture(t);
+  const second = await fixture(t);
+  const projectless = await mkdtemp(
+    path.join(os.tmpdir(), "less-openwiki-projectless-"),
+  );
+  t.after(() => rm(projectless, { recursive: true, force: true }));
+  const sessionId = "bound-root-session";
+  const firstPlan = path.join(first, "openwiki", ".intents", "plan.json");
+  invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: { file_path: firstPlan },
+  });
+
+  const switchAttempt = invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: {
+      file_path: path.join(second, "openwiki", ".intents", "plan.json"),
+    },
+  });
+  assert.match(
+    switchAttempt.hookSpecificOutput.permissionDecisionReason,
+    /active repository/u,
+  );
+
+  const mixedAttempt = invoke(projectless, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    session_id: sessionId,
+    cwd: projectless,
+    tool_name: "apply_patch",
+    tool_input: {
+      patch: `*** Begin Patch\n*** Update File: ${path.join(first, "README.md")}\n*** Add File: ${firstPlan}\n+{}\n*** End Patch`,
+    },
+  });
+  assert.match(
+    mixedAttempt.hookSpecificOutput.permissionDecisionReason,
+    /source changes/u,
+  );
+});
+
 test("a first plan write bootstraps a delegated native run", async (t) => {
   const root = await fixture(t);
   const result = invoke(root, "pre-tool", {
@@ -260,7 +429,7 @@ test("a first plan write bootstraps a delegated native run", async (t) => {
     tool_name: "apply_patch",
     tool_input: { file_path: "openwiki/.intents/plan.json" },
   });
-  assert.deepEqual(result, {});
+  assert.match(result.hookSpecificOutput.additionalContext, /run .* started/u);
   const state = JSON.parse(
     await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
   );
@@ -2403,7 +2572,7 @@ test("a resumed run recovers a checkpointed page from durable manifest coverage"
   );
   const recovered = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(recovered.plan.pages[0].status, "complete");
-  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.3.0");
+  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.4.0");
 });
 
 test("a resume rejects completed native work that lost its durable Claims proof", async (t) => {
