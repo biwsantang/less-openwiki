@@ -1,6 +1,6 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { hash, isDirectory, relative } from "./storage.mjs";
+import { hash, isDirectory } from "./storage.mjs";
 
 /** Applies page-local provenance and Claims-source projections after Claims succeeds. */
 export async function finalizePage(root, page, actor, claims) {
@@ -58,41 +58,149 @@ function synchronizeVerification(content, actor) {
   );
 }
 
-/** Builds deterministic index pages after all factual pages and Claims validate. */
-export async function finalizeWiki(root) {
+/** Builds deterministic OKF v0.2 navigation indexes after Claims validation. */
+export async function finalizeWiki(root, language = "en") {
   const wikiRoot = path.join(root, "openwiki");
+  const labels = indexLabels(language);
   for (const directory of await directories(wikiRoot)) {
     const entries = await readdir(directory, { withFileTypes: true });
-    const links = entries
-      .filter(
-        (entry) =>
-          entry.isFile() &&
-          entry.name.endsWith(".md") &&
-          entry.name !== "index.md" &&
-          !entry.name.startsWith("."),
-      )
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(
-        (entry) =>
-          `- [${title(entry.name.replace(/\.md$/u, ""))}](${encodeURIComponent(entry.name)})`,
-      );
+    const files = await Promise.all(
+      entries
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            entry.name.endsWith(".md") &&
+            !["index.md", "log.md", "INSTRUCTIONS.md"].includes(entry.name) &&
+            !entry.name.startsWith("."),
+        )
+        .map(async (entry) => {
+          const metadata = indexMetadata(
+            await readFile(path.join(directory, entry.name), "utf8"),
+          );
+          return {
+            href: encodeURIComponent(entry.name),
+            label: metadata.title ?? path.posix.basename(entry.name, ".md"),
+            description: metadata.description,
+          };
+        }),
+    );
     const children = entries
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(
-        (entry) =>
-          `- [${title(entry.name)}](${encodeURIComponent(entry.name)}/)`,
-      );
-    if (!links.length && !children.length) continue;
-    const label = relative(wikiRoot, directory) || "Documentation";
-    await writeFile(
-      path.join(directory, "index.md"),
-      `---\ntype: index\ntitle: ${title(label)}\ndescription: Documentation navigation.\n---\n\n# ${title(label)}\n\n${[...children, ...links].join("\n")}\n`,
-      "utf8",
+      .map((entry) => ({
+        href: `${encodeURIComponent(entry.name)}/`,
+        label: entry.name,
+      }));
+    const content = renderIndex(
+      files,
+      children,
+      directory === wikiRoot,
+      labels,
     );
+    const index = path.join(directory, "index.md");
+    let existing = null;
+    try {
+      existing = await readFile(index, "utf8");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    if (existing !== content) await writeFile(index, content, "utf8");
   }
   await validateInternalLinks(root);
   await degradeInvalidMermaid(root);
+}
+
+function renderIndex(files, directories, isRoot, labels) {
+  const sections = [
+    renderLinks(labels.files, files, true),
+    renderLinks(labels.directories, directories, false),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  return `${isRoot ? '---\nokf_version: "0.2"\n---\n\n' : ""}${sections || `# ${labels.files}`}\n`;
+}
+
+function renderLinks(heading, links, includeDescription) {
+  if (links.length === 0) return "";
+  links.sort((left, right) => left.href.localeCompare(right.href));
+  return `# ${heading}\n\n${links
+    .map(({ description, href, label }) => {
+      const link = `- [${escapeLabel(label)}](${href})`;
+      return includeDescription && description
+        ? `${link} - ${description}`
+        : link;
+    })
+    .join("\n")}`;
+}
+
+function indexMetadata(content) {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1];
+  if (!frontmatter) return {};
+  const value = (key) => {
+    const match = new RegExp(`^${key}:\\s*(.+?)\\s*$`, "mu").exec(frontmatter);
+    if (!match) return undefined;
+    const raw = match[1].trim();
+    const unquoted = /^(["'])(.*)\1$/u.exec(raw)?.[2] ?? raw;
+    return unquoted.trim() || undefined;
+  };
+  return { title: value("title"), description: value("description") };
+}
+
+function escapeLabel(value) {
+  return String(value)
+    .replaceAll("\\", "\\\\")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
+}
+
+function indexLabels(language) {
+  const labels = {
+    ar: ["ملفات", "مجلدات"],
+    bg: ["Файлове", "Директории"],
+    ca: ["Fitxers", "Directoris"],
+    cs: ["Soubory", "Adresáře"],
+    da: ["Filer", "Mapper"],
+    de: ["Dateien", "Verzeichnisse"],
+    el: ["Αρχεία", "Κατάλογοι"],
+    es: ["Archivos", "Directorios"],
+    fi: ["Tiedostot", "Hakemistot"],
+    fr: ["Fichiers", "Répertoires"],
+    he: ["קבצים", "תיקיות"],
+    hi: ["फ़ाइलें", "निर्देशिकाएँ"],
+    hr: ["Datoteke", "Direktoriji"],
+    hu: ["Fájlok", "Könyvtárak"],
+    id: ["Berkas", "Direktori"],
+    it: ["File", "Cartelle"],
+    ja: ["ファイル", "ディレクトリ"],
+    ko: ["파일", "디렉터리"],
+    ms: ["Fail", "Direktori"],
+    nb: ["Filer", "Mapper"],
+    nl: ["Bestanden", "Mappen"],
+    no: ["Filer", "Mapper"],
+    pl: ["Pliki", "Katalogi"],
+    pt: ["Arquivos", "Diretórios"],
+    "pt-PT": ["Ficheiros", "Diretórios"],
+    ro: ["Fișiere", "Directoare"],
+    ru: ["Файлы", "Каталоги"],
+    sk: ["Súbory", "Adresáre"],
+    sl: ["Datoteke", "Mape"],
+    sr: ["Датотеке", "Директоријуми"],
+    sv: ["Filer", "Kataloger"],
+    th: ["ไฟล์", "ไดเรกทอรี"],
+    tr: ["Dosyalar", "Dizinler"],
+    uk: ["Файли", "Каталоги"],
+    vi: ["Tập tin", "Thư mục"],
+    zh: ["文件", "目录"],
+    "zh-TW": ["檔案", "目錄"],
+  };
+  let locale;
+  try {
+    locale = new Intl.Locale(language).toString();
+  } catch {
+    locale = language;
+  }
+  const found = labels[locale] ??
+    labels[locale.split("-")[0]] ?? ["Files", "Directories"];
+  return { files: found[0], directories: found[1] };
 }
 
 async function validateInternalLinks(root) {
@@ -289,14 +397,4 @@ async function directories(root) {
     if (entry.isDirectory() && !entry.name.startsWith("."))
       out.push(...(await directories(path.join(root, entry.name))));
   return out.sort();
-}
-function title(value) {
-  return value
-    .split(/[\\/]/u)
-    .map((part) =>
-      part
-        .replace(/[-_]/gu, " ")
-        .replace(/\b\w/g, (letter) => letter.toUpperCase()),
-    )
-    .join(" / ");
 }

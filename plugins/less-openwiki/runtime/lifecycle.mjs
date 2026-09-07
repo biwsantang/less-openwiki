@@ -222,7 +222,7 @@ export async function finish(root) {
     throw new Error(
       `Claims evidence is stale or unresolved: ${issues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ")}`,
     );
-  await finalizeWiki(root);
+  await finalizeWiki(root, state.language);
   await replaceManifest(root, pages, state);
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),

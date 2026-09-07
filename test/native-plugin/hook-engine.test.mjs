@@ -130,6 +130,17 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
     /verified:\n\s+- by: openwiki\/0\.5\.0/u,
   );
+  assert.equal(
+    await readFile(path.join(root, "openwiki", "index.md"), "utf8"),
+    '---\nokf_version: "0.2"\n---\n\n# Files\n\n- [quickstart](quickstart.md) - Fixture documentation.\n\n# Directories\n\n- [architecture](architecture/)\n',
+  );
+  assert.equal(
+    await readFile(
+      path.join(root, "openwiki", "architecture", "index.md"),
+      "utf8",
+    ),
+    "# Files\n\n- [overview](overview.md) - Fixture documentation.\n",
+  );
   const architecture = await readFile(
     path.join(root, "openwiki", "architecture", "overview.md"),
     "utf8",
