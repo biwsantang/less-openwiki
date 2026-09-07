@@ -85,6 +85,15 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     denied.hookSpecificOutput.permissionDecisionReason,
     /architecture/u,
   );
+  const camelCaseDenied = invoke(root, "pre-tool", {
+    hook_event_name: "PreToolUse",
+    cwd: root,
+    tool_input: { filePath: "openwiki/quickstart.md" },
+  });
+  assert.match(
+    camelCaseDenied.hookSpecificOutput.permissionDecisionReason,
+    /architecture/u,
+  );
 
   for (const page of state.plan.pages.map((entry) => entry.path)) {
     await writeIntent(root, page, "README.md");

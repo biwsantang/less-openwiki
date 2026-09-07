@@ -986,7 +986,16 @@ function title(value) {
 function extractTargets(input, root) {
   const raw = [];
   const tool = input.tool_input ?? input.toolInput ?? {};
-  for (const key of ["file_path", "path", "file", "target_file"])
+  for (const key of [
+    "file_path",
+    "filePath",
+    "output_path",
+    "outputPath",
+    "path",
+    "file",
+    "target_file",
+    "targetFile",
+  ])
     if (typeof tool[key] === "string") raw.push(tool[key]);
   for (const key of ["patch", "command", "new_string", "old_string", "content"])
     if (typeof tool[key] === "string")
