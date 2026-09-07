@@ -7,7 +7,7 @@ Less OpenWiki is a native coding-agent documentation plugin.
 - `plugins/less-openwiki/.codex-plugin/plugin.json` is the Codex manifest.
 - `plugins/less-openwiki/.claude-plugin/plugin.json` is the Claude Code
   manifest.
-- `plugins/less-openwiki/skills/less-openwiki/SKILL.md` is the shared workflow.
+- `plugins/less-openwiki/skills/openwiki/SKILL.md` is the shared workflow.
 - `plugins/less-openwiki/hooks/hooks.json` binds host lifecycle events to the
   shared hook engine.
 - `plugins/less-openwiki/hooks/less-openwiki-hook.mjs` owns deterministic

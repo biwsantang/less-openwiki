@@ -43,7 +43,7 @@ Route each report entry with the matrix above:
 | Upstream change area                                                     | Native destination                                                                     |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | Documentation behavior, Claims, OKF, source snapshots, or page manifests | `plugins/less-openwiki/runtime/` and `test/native-plugin/`                             |
-| Host-facing workflow or instructions                                     | `skills/less-openwiki/SKILL.md`, `docs/`, and `README.md`                              |
+| Host-facing workflow or instructions                                     | `skills/openwiki/SKILL.md`, `docs/`, and `README.md`                                   |
 | Hook event contract or packaging                                         | `hooks/`, both manifests, marketplaces, and plugin validation                          |
 | Removed transport or visualization surface                               | Record a maintainer decision here only if it affects repository-documentation behavior |
 

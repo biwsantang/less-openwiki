@@ -9,7 +9,7 @@ const pluginRoot = path.join(root, "plugins", "less-openwiki");
 const requiredFiles = [
   path.join(pluginRoot, ".codex-plugin", "plugin.json"),
   path.join(pluginRoot, ".claude-plugin", "plugin.json"),
-  path.join(pluginRoot, "skills", "less-openwiki", "SKILL.md"),
+  path.join(pluginRoot, "skills", "openwiki", "SKILL.md"),
   path.join(pluginRoot, "hooks", "hooks.json"),
   path.join(pluginRoot, "hooks", "less-openwiki-hook.mjs"),
   path.join(pluginRoot, "runtime", "storage.mjs"),

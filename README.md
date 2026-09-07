@@ -41,7 +41,7 @@ codex plugin marketplace add .
 codex plugin add less-openwiki@less-openwiki
 ```
 
-Start a new Codex thread, invoke `$less-openwiki`, or ask Codex to initialize
+Start a new Codex thread, invoke `$openwiki`, or ask Codex to initialize
 or update repository documentation. Review and trust the plugin hooks when
 Codex asks; they keep documentation runs durable across the full lifecycle.
 
@@ -54,7 +54,7 @@ This repository also contains a Claude Code marketplace and plugin manifest.
 /plugin install less-openwiki@less-openwiki
 ```
 
-Invoke `/less-openwiki:less-openwiki`, or ask Claude Code to initialize or
+Invoke `/less-openwiki:openwiki`, or ask Claude Code to initialize or
 update repository documentation.
 
 ## Use

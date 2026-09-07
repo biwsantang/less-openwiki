@@ -2,7 +2,7 @@
 
 This repository ships a native repository-documentation plugin for Codex and
 Claude Code. Start with [the plugin architecture](docs/native-plugin.md), the
-shared skill at `plugins/less-openwiki/skills/less-openwiki/SKILL.md`, and the
+shared skill at `plugins/less-openwiki/skills/openwiki/SKILL.md`, and the
 hook adapter at `plugins/less-openwiki/hooks/less-openwiki-hook.mjs` and the
 extracted runtime at `plugins/less-openwiki/runtime/`.
 

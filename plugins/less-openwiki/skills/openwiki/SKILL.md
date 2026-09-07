@@ -1,5 +1,5 @@
 ---
-name: less-openwiki
+name: openwiki
 description: Create, update, resume, validate, or migrate repository documentation. Use whenever a user asks to initialize a project wiki, update docs from source changes, keep a documentation map current, resume interrupted documentation, or review incoming upstream changes.
 ---
 
