@@ -148,6 +148,13 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     path.join(root, "openwiki", "architecture", "overview.md"),
     "utf8",
   );
+  const architectureClaims = JSON.parse(
+    await readFile(
+      path.join(root, "openwiki", ".claims", "architecture", "overview.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(architectureClaims.pageVersion, hash(architecture));
   assert.match(architecture, /broken internal link/u);
   assert.match(architecture, /```text/u);
 });

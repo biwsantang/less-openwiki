@@ -213,6 +213,19 @@ export async function refreshClaimsPageVersion(root, page) {
   await writeJson(file, persisted);
 }
 
+/** Proves the current Markdown bytes remain covered by verified Claims state. */
+export async function assertClaimsPageCurrent(root, page) {
+  const persisted = await loadClaims(claimsPath(root, page), {
+    required: true,
+  });
+  const pageVersion = hash(await readFile(path.join(root, page)));
+  if (!persisted.verification || persisted.pageVersion !== pageVersion)
+    throw new Error(
+      `Cannot prove current Claims coverage for ${page}; Markdown and verified Claims are not durable.`,
+    );
+  return persisted;
+}
+
 function sameEvidence(left, right) {
   return (
     left.length === right.length &&

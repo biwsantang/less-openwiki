@@ -22,6 +22,7 @@ import {
   readJson,
 } from "./storage.mjs";
 import {
+  assertClaimsPageCurrent,
   claimsPath,
   preflightClaims,
   reconcileClaims,
@@ -226,6 +227,8 @@ export async function finish(root) {
       `Claims evidence is stale or unresolved: ${issues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ")}`,
     );
   await finalizeWiki(root, state.language);
+  for (const file of pages)
+    await refreshClaimsPageVersion(root, relative(root, file));
   await replaceManifest(root, pages, state);
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),
@@ -676,10 +679,11 @@ async function replaceManifest(root, pages, state) {
   const entries = {};
   for (const file of pages) {
     const page = relative(root, file);
+    const claims = await assertClaimsPageCurrent(root, page);
     entries[`/${page}`] = {
       ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
       sourceFingerprint: state.sourceFingerprint,
-      pageVersion: hash(await readFile(file)),
+      pageVersion: claims.pageVersion,
       completedBy:
         state.plan.pages.find((job) => job.path === page)?.completedBy ??
         state.actor.producerActor,
@@ -690,16 +694,8 @@ async function replaceManifest(root, pages, state) {
 }
 
 async function recordManifestPageCompletion(root, page, state) {
-  const pageVersion = hash(await readFile(path.join(root, page)));
-  const sidecar = await readJson(claimsPath(root, page), { required: true });
-  if (
-    !sidecar?.verification ||
-    sidecar.pageVersion !== pageVersion ||
-    !Array.isArray(sidecar.claims)
-  )
-    throw new Error(
-      `Cannot record completion for ${page}; Markdown and verified Claims are not durable.`,
-    );
+  const sidecar = await assertClaimsPageCurrent(root, page);
+  const pageVersion = sidecar.pageVersion;
   const manifest = await readManifest(root);
   manifest.pages[`/${page}`] = {
     ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
