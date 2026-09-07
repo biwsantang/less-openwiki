@@ -63,7 +63,7 @@ function documentationRequest(event) {
       prompt,
     );
   const documentationAction =
-    /\b(create|generate|initialize|initialise|update|refresh|maintain|document|build|write|resume|map)\b/iu.test(
+    /\b(add|build|create|document|generate|improve|initialize|initialise|maintain|map|migrate|refresh|repair|resume|revise|translate|update|validate|write)\b/iu.test(
       prompt,
     );
   return documentationTarget && documentationAction;

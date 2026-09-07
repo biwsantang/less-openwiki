@@ -233,6 +233,21 @@ test("native prompt detection recognizes an onboarding guide request", async (t)
   );
 });
 
+test("native prompt detection recognizes documentation migration requests", async (t) => {
+  const root = await fixture(t);
+  const result = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Migrate the repository documentation to the current format.",
+  });
+  assert.match(result.hookSpecificOutput.additionalContext, /started/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+});
+
 test("a changed documentation language adds every omitted factual page to the plan", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
