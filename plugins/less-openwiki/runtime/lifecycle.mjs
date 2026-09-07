@@ -512,10 +512,33 @@ async function reconcileManifestPageJobs(root, state) {
   const manifest = await readManifest(root);
   let changed = false;
   for (const job of state.plan.pages) {
-    if (job.status !== "pending") continue;
     const entry = manifest.pages[`/${job.path}`];
-    if (!(await manifestCompletionIsCurrent(root, job.path, state, entry)))
+    const current = await manifestCompletionIsCurrent(
+      root,
+      job.path,
+      state,
+      entry,
+    );
+    if (job.status === "complete") {
+      if (current) continue;
+      try {
+        await assertClaimsPageCurrent(root, job.path);
+      } catch (error) {
+        throw new Error(
+          `Completed documentation page ${job.path} lost its durable Claims proof; refusing to resume it.`,
+          { cause: error },
+        );
+      }
+      await recordManifestPageCompletion(
+        root,
+        job.path,
+        state,
+        job.completedBy ?? entry?.completedBy ?? state.actor.producerActor,
+      );
+      changed = true;
       continue;
+    }
+    if (job.status !== "pending" || !current) continue;
     job.status = "complete";
     job.completedBy = entry.completedBy ?? state.actor.producerActor;
     changed = true;
@@ -1091,7 +1114,12 @@ async function replaceManifest(root, pages, state) {
   await writeManifest(root, { schemaVersion: 1, pages: entries });
 }
 
-async function recordManifestPageCompletion(root, page, state) {
+async function recordManifestPageCompletion(
+  root,
+  page,
+  state,
+  completedBy = state.actor.producerActor,
+) {
   const sidecar = await assertClaimsPageCurrent(root, page);
   const pageVersion = sidecar.pageVersion;
   const manifest = await readManifest(root);
@@ -1099,7 +1127,7 @@ async function recordManifestPageCompletion(root, page, state) {
     ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
     sourceFingerprint: state.sourceFingerprint,
     pageVersion,
-    completedBy: state.actor.producerActor,
+    completedBy,
     completedRunId: state.runId,
   };
   await writeManifest(root, manifest);

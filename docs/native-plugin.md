@@ -87,6 +87,11 @@ current Claims seed missing page entries from the recorded successful Git head.
 Unverifiable pages deliberately remain uncovered and enter the full-review
 queue rather than receiving guessed coverage.
 
+Resume re-proves every completed job against its current Markdown and Claims
+sidecar. If the proof was lost, the run fails closed instead of publishing a
+page that was edited after its checkpoint; valid deterministic finalizer
+rewrites are re-recorded with the original page producer.
+
 While generating or resuming, the hook also supplies the complete current page
 job: its title, purpose, repository seed paths, related pages, and any planner
 instructions, plus the existing Claim count and any stale or unresolved Claim

@@ -2055,6 +2055,53 @@ test("a resumed run recovers a checkpointed page from durable manifest coverage"
   assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.2.0");
 });
 
+test("a resume rejects completed native work that lost its durable Claims proof", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  await writeIntent(root, "openwiki/quickstart.md", "README.md");
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Fixture documentation.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/quickstart.md" },
+  });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Mutated after checkpoint.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+
+  const resumed = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Resume documentation.",
+  });
+  assert.match(resumed.systemMessage, /lost its durable Claims proof/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .plan.pages[0].status,
+    "complete",
+  );
+});
+
 test("a resumed run retries a durable skipped page", async (t) => {
   const root = await fixture(t);
   invoke(root, "user-prompt", {
