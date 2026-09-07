@@ -623,6 +623,100 @@ test("an update is a no-op only with no visible source changes and no Claims deb
   );
 });
 
+test("a docs-only commit fast-forwards native manifest coverage during no-op", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  const pageVersion = hash(
+    await readFile(path.join(root, "openwiki", "quickstart.md")),
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion,
+    claims: [
+      {
+        id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+        statement: "The quickstart exists.",
+        evidence: [
+          {
+            resource: "repo://README.md",
+            version: (await resolveRepositoryEvidence(root, "repo://README.md"))
+              .version,
+          },
+        ],
+      },
+    ],
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+  });
+  await writeJson(path.join(root, "openwiki", ".page-manifest.json"), {
+    schemaVersion: 1,
+    pages: {
+      "/openwiki/quickstart.md": {
+        sourceFingerprint:
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        pageVersion,
+      },
+    },
+  });
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: root,
+  });
+  const baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    gitHead: baseline,
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en",
+  });
+  await writeFile(
+    path.join(root, "openwiki", "index.md"),
+    "# Navigation\n",
+    "utf8",
+  );
+  execFileSync("git", ["add", "openwiki/index.md"], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "docs only"], {
+    cwd: root,
+  });
+  const current = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  const result = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+  assert.match(result.hookSpecificOutput.additionalContext, /current/u);
+  const manifest = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".page-manifest.json"), "utf8"),
+  );
+  assert.equal(manifest.pages["/openwiki/quickstart.md"].gitHead, current);
+  assert.match(
+    manifest.pages["/openwiki/quickstart.md"].sourceFingerprint,
+    /^sha256:[a-f0-9]{64}$/u,
+  );
+  assert.equal(
+    JSON.parse(
+      await readFile(path.join(root, "openwiki", ".last-update.json"), "utf8"),
+    ).gitHead,
+    current,
+  );
+});
+
 test("source content drift is detected even when Git status stays modified", async (t) => {
   const root = await fixture(t);
   await writeFile(

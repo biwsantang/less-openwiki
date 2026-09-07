@@ -69,10 +69,20 @@ export async function startOrResume(root, input) {
     changedPaths.length === 0 &&
     claimIssues.length === 0 &&
     completeCoverage
-  )
+  ) {
+    await fastForwardManifestCoverage(root, existingPages, source);
+    await writeJson(lastUpdatePath(root), {
+      updatedAt: now(),
+      command: "update",
+      ...(source.gitHead ? { gitHead: source.gitHead } : {}),
+      model: lastUpdate.model,
+      status: "complete",
+      language: lastUpdate.language ?? "en",
+    });
     return context(
       "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
     );
+  }
   const state = {
     schemaVersion: 1,
     runId: randomUUID(),
@@ -782,6 +792,27 @@ async function readManifest(root) {
 
 async function hasCompleteManifestCoverage(root, pages) {
   return (await uncoveredManifestPages(root, pages)).length === 0;
+}
+
+async function fastForwardManifestCoverage(root, pages, source) {
+  const manifest = await readManifest(root);
+  for (const file of pages) {
+    const page = relative(root, file);
+    const key = `/${page}`;
+    const current = manifest.pages[key];
+    if (!current) continue;
+    const claims = await assertClaimsPageCurrent(root, page);
+    manifest.pages[key] = {
+      ...(source.gitHead ? { gitHead: source.gitHead } : {}),
+      sourceFingerprint: source.fingerprint,
+      pageVersion: claims.pageVersion,
+      ...(current.completedBy ? { completedBy: current.completedBy } : {}),
+      ...(current.completedRunId
+        ? { completedRunId: current.completedRunId }
+        : {}),
+    };
+  }
+  await writeManifest(root, manifest);
 }
 
 async function uncoveredManifestPages(root, existingPages) {
