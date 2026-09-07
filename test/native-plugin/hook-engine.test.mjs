@@ -701,6 +701,70 @@ test("a stale Claim requires an explicit reconciliation decision", async (t) => 
   );
 });
 
+test("Claims reconciliation accepts only the upstream private intent shape", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  await assert.rejects(
+    reconcileClaims(
+      root,
+      "openwiki/quickstart.md",
+      {
+        replaceAll: true,
+        claims: [
+          {
+            statement: "The fixture exists.",
+            evidence: [{ resource: "repo://README.md" }],
+          },
+        ],
+      },
+      "openwiki/0.5.0",
+    ),
+    /unsupported Claim reconciliation field/u,
+  );
+  await assert.rejects(
+    reconcileClaims(
+      root,
+      "openwiki/quickstart.md",
+      {
+        claims: [
+          { statement: "The fixture exists.", evidence: ["repo://README.md"] },
+        ],
+      },
+      "openwiki/0.5.0",
+    ),
+    /evidence must contain only a non-empty resource/u,
+  );
+  const claims = await reconcileClaims(
+    root,
+    "openwiki/quickstart.md",
+    {
+      claims: [
+        {
+          statement: "The fixture exists.",
+          evidence: [{ resource: "repo://README.md" }],
+        },
+      ],
+    },
+    "openwiki/0.5.0",
+  );
+  assert.match(claims[0].id, /^claim_[a-f0-9]{32}$/u);
+  const confirmedByOmission = await reconcileClaims(
+    root,
+    "openwiki/quickstart.md",
+    {},
+    "openwiki/0.5.0",
+  );
+  assert.deepEqual(
+    confirmedByOmission.map(({ id }) => id),
+    claims.map(({ id }) => id),
+  );
+});
+
 test("malformed durable Claims state fails closed during preflight", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
