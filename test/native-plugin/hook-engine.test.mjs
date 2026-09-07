@@ -20,6 +20,7 @@ import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/e
 import { finish } from "../../plugins/less-openwiki/runtime/lifecycle.mjs";
 import {
   finalizeGeneratedProvenance,
+  finalizePage,
   finalizeWiki,
 } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
@@ -704,6 +705,39 @@ test("native link validation clamps paths and stamps upstream-compatible diagnos
   assert.match(
     page,
     /<!-- openwiki: broken internal link \[#missing-anchor\] heading anchor "missing-anchor" does not exist in \/openwiki\/nested\/page\.md\. Fix the href or restore the target, then delete this comment\. -->/u,
+  );
+});
+
+test("Claims source projection preserves authored sources and replaces only native entries", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  const page = path.join(root, "openwiki", "sources.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Sources\nsources:\n  - id: authored-source\n    resource: repo://AUTHORED.md\n  - id: openwiki-source-obsolete\n    resource: repo://old.md\n---\n\n# Sources\n",
+    "utf8",
+  );
+
+  await finalizePage(
+    root,
+    "openwiki/sources.md",
+    "openwiki/0.5.0",
+    [{ evidence: [{ resource: "repo://README.md#L1-L1" }] }],
+    "2026-01-01T00:00:00.000Z",
+  );
+
+  const content = await readFile(page, "utf8");
+  assert.match(
+    content,
+    /id: authored-source\n    resource: repo:\/\/AUTHORED\.md/u,
+  );
+  assert.doesNotMatch(content, /openwiki-source-obsolete/u);
+  assert.match(
+    content,
+    new RegExp(
+      `id: openwiki-source-${hash("repo://README.md").slice(7, 31)}\\n    resource: repo://README\\.md`,
+      "u",
+    ),
   );
 });
 

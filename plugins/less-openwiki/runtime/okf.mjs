@@ -536,17 +536,60 @@ async function projectClaimSources(root, page, claims) {
   const sourceLines = resources
     .map(
       (resource) =>
-        `  - id: openwiki-source-${hash(resource).slice("sha256:".length, 24)}\n    resource: ${resource}`,
+        `  - id: openwiki-source-${hash(resource).slice("sha256:".length, "sha256:".length + 24)}\n    resource: ${resource}`,
     )
     .join("\n");
-  const next = content.match(/^---\r?\n([\s\S]*?)\r?\n---/u)
-    ? content.replace(
-        /^---\r?\n([\s\S]*?)\r?\n---/u,
-        (_all, frontmatter) =>
-          `---\n${frontmatter.replace(/^sources:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\nsources:\n${sourceLines}\n---`,
-      )
-    : content;
+  const next = replaceClaimSources(content, sourceLines);
   if (next !== content) await writeFile(file, next, "utf8");
+}
+
+/** Replaces only source entries owned by the Claims projection. */
+function replaceClaimSources(content, projected) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
+  if (!match) return content;
+  const { retained, withoutSources } = retainAuthoredSources(match[1]);
+  const sources = [...retained, ...(projected ? projected.split("\n") : [])];
+  const frontmatter = [
+    withoutSources.trimEnd(),
+    ...(sources.length ? ["sources:", ...sources] : []),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return content.replace(
+    /^---\r?\n([\s\S]*?)\r?\n---/u,
+    `---\n${frontmatter}\n---`,
+  );
+}
+
+function retainAuthoredSources(frontmatter) {
+  const lines = frontmatter.split(/\r?\n/u);
+  const start = lines.findIndex((line) => /^sources:\s*(?:#.*)?$/u.test(line));
+  if (start === -1) return { retained: [], withoutSources: frontmatter };
+  let end = start + 1;
+  while (end < lines.length && (lines[end] === "" || /^\s/u.test(lines[end])))
+    end += 1;
+  const entries = [];
+  let entry = [];
+  for (const line of lines.slice(start + 1, end)) {
+    if (/^\s*-\s+/u.test(line) && entry.length) {
+      entries.push(entry);
+      entry = [];
+    }
+    entry.push(line);
+  }
+  if (entry.length) entries.push(entry);
+  const retained = entries
+    .filter(
+      (lines) =>
+        !lines.some((line) =>
+          /^\s*(?:-\s*)?id:\s*["']?openwiki-source-/iu.test(line),
+        ),
+    )
+    .flat();
+  return {
+    retained,
+    withoutSources: [...lines.slice(0, start), ...lines.slice(end)].join("\n"),
+  };
 }
 
 async function directories(root) {
