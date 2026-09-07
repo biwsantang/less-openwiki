@@ -34,6 +34,7 @@ import {
   finalizeGeneratedProvenance,
   finalizePage,
   finalizeWiki,
+  normalizePageOkf,
   normalizeWikiOkf,
 } from "./okf.mjs";
 
@@ -184,6 +185,7 @@ export async function checkpoint(root, input) {
         "Less OpenWiki: repository source changed; the current plan was invalidated and must be replaced.",
     };
   }
+  await normalizePageOkf(root, current.path, state.language);
   const validation = await validatePage(root, current.path);
   if (!validation.ok) {
     await rollbackPage(root, state, current.path);
@@ -246,6 +248,7 @@ export async function finish(root) {
     await removeClaims(root, page);
   }
   await removeOrphanClaims(root);
+  await normalizeWikiOkf(root, state.language);
   const pages = await factualPages(root);
   for (const file of pages) {
     const validation = await validatePage(root, relative(root, file));

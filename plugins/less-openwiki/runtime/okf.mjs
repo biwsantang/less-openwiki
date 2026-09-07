@@ -9,14 +9,20 @@ import { hash, isDirectory, relative } from "./storage.mjs";
  */
 export async function normalizeWikiOkf(root, language = "en") {
   for (const file of await markdownFiles(path.join(root, "openwiki"))) {
-    const original = await readFile(file, "utf8");
-    const content = repairOkfFrontmatter(
-      original,
-      file,
-      conceptTypeFor(language),
-    );
-    if (content !== original) await writeFile(file, content, "utf8");
+    await normalizePageOkf(root, relative(root, file), language);
   }
+}
+
+/** Repairs one factual page before Claims are made durable. */
+export async function normalizePageOkf(root, page, language = "en") {
+  const file = path.join(root, page);
+  const original = await readFile(file, "utf8");
+  const content = repairOkfFrontmatter(
+    original,
+    file,
+    conceptTypeFor(language),
+  );
+  if (content !== original) await writeFile(file, content, "utf8");
 }
 
 function repairOkfFrontmatter(content, file, conceptType) {

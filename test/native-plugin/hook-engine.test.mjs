@@ -482,6 +482,43 @@ test("OKF migration repairs malformed standard metadata families", async (t) => 
   );
 });
 
+test("a native checkpoint repairs authored OKF before Claims completion", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  await writeIntent(root, "openwiki/quickstart.md", "README.md");
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: []\ntitle: 42\nauthor: Ada\n---\n# Quickstart\n",
+    "utf8",
+  );
+
+  const checkpoint = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/quickstart.md" },
+  });
+
+  assert.match(checkpoint.hookSpecificOutput.additionalContext, /Recorded/u);
+  assert.match(
+    await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
+    /type: "Reference"\ntitle: "Quickstart"\nauthor: Ada\nopenwiki_generated: true/u,
+  );
+});
+
 test("generated provenance preserves an untouched page's prior producer event", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
