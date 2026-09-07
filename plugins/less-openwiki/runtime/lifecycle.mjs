@@ -352,27 +352,29 @@ async function reconcileManifestPageJobs(root, state) {
 
 async function acceptPlan(root, state) {
   const intent = await readJson(planIntentPath(root), { required: true });
-  if (!Array.isArray(intent?.pages))
+  if (
+    !intent ||
+    typeof intent !== "object" ||
+    Array.isArray(intent) ||
+    Object.keys(intent).some(
+      (key) => !["pages", "deletePages", "language"].includes(key),
+    ) ||
+    !Array.isArray(intent.pages)
+  )
     throw new Error("plan intent requires a pages array");
-  const pages = intent.pages.map((raw) => ({
-    id: randomUUID(),
-    path: normalizePage(String(raw.path ?? "")),
-    title: String(raw.title ?? "").trim(),
-    purpose: String(raw.purpose ?? "").trim(),
-    seedPaths: [...new Set(raw.seedPaths ?? [])].sort(),
-    relatedPages: [...new Set(raw.relatedPages ?? [])].sort(),
-    instructions: [...new Set(raw.instructions ?? [])].sort(),
-    status: "pending",
-  }));
-  if (pages.some((page) => !page.title || !page.purpose))
-    throw new Error("every planned page requires title and purpose");
+  const pages = intent.pages.map(planPage);
   if (new Set(pages.map((page) => page.path)).size !== pages.length)
     throw new Error("plan contains duplicate pages");
   const deletePages = [
-    ...new Set((intent.deletePages ?? []).map(normalizePage)),
+    ...new Set(
+      planStrings(intent.deletePages ?? [], "deletePages").map(normalizePage),
+    ),
   ].sort();
-  if (typeof intent.language === "string" && intent.language.trim())
+  if (intent.language !== undefined) {
+    if (typeof intent.language !== "string" || !intent.language.trim())
+      throw new Error("plan language must be a non-empty BCP-47 string");
     state.language = resolveLanguage(intent.language);
+  }
   state.languageChanged = Boolean(
     state.previousLastUpdate?.language &&
     primaryLanguage(state.previousLastUpdate.language) !==
@@ -423,6 +425,62 @@ async function acceptPlan(root, state) {
   await createRollback(root, state);
   await rm(planIntentPath(root), { force: true });
   await writeRun(root, state);
+}
+
+function planPage(raw) {
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    Array.isArray(raw) ||
+    Object.keys(raw).some(
+      (key) =>
+        ![
+          "path",
+          "title",
+          "purpose",
+          "seedPaths",
+          "relatedPages",
+          "instructions",
+        ].includes(key),
+    )
+  )
+    throw new Error("every plan page must be an object with supported fields");
+  if (
+    typeof raw.path !== "string" ||
+    typeof raw.title !== "string" ||
+    typeof raw.purpose !== "string" ||
+    !raw.path.trim() ||
+    !raw.title.trim() ||
+    !raw.purpose.trim()
+  )
+    throw new Error(
+      "every planned page requires non-empty string path, title, and purpose",
+    );
+  return {
+    id: randomUUID(),
+    path: normalizePage(raw.path),
+    title: raw.title.trim(),
+    purpose: raw.purpose.trim(),
+    seedPaths: [
+      ...new Set(planStrings(raw.seedPaths ?? [], "seedPaths")),
+    ].sort(),
+    relatedPages: [
+      ...new Set(planStrings(raw.relatedPages ?? [], "relatedPages")),
+    ].sort(),
+    instructions: [
+      ...new Set(planStrings(raw.instructions ?? [], "instructions")),
+    ].sort(),
+    status: "pending",
+  };
+}
+
+function planStrings(value, field) {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string" || !item.trim())
+  )
+    throw new Error(`${field} must be an array of non-empty strings`);
+  return value.map((item) => item.trim());
 }
 
 function addRequiredClaimIssueJobs(pages, pagePaths, deleted, issues) {

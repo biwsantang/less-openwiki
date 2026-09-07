@@ -383,6 +383,31 @@ test("a plan rejects an unrecognized documentation language without advancing", 
   );
 });
 
+test("a plan rejects malformed page fields without coercing them", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [{ path: 42, title: "Quickstart", purpose: "Route readers." }],
+  });
+
+  const rejected = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+
+  assert.match(rejected.systemMessage, /non-empty string path/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+});
+
 test("an update normalizes an existing page with unusable front matter", async (t) => {
   const root = await fixture(t);
   await mkdir(path.join(root, "openwiki"), { recursive: true });
