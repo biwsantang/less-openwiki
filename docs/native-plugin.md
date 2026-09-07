@@ -52,7 +52,9 @@ skill does not edit durable lifecycle files directly.
 Before an update begins, the lifecycle normalizes any factual page that lacks
 usable OKF front matter into a minimal, explicitly code-derived record. Existing
 usable metadata remains unchanged, so the update can enrich it without a manual
-format-conversion step.
+format-conversion step. The same deterministic repair runs before each page
+checkpoint and finalization, before Claims and page-manifest coverage become
+durable.
 
 If repository source changes after all page jobs have been checkpointed, the
 finalizer still validates and preserves the completed documentation. It retains
