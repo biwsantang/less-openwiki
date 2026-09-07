@@ -13,7 +13,8 @@ as the work proceeds.
 - Creates a semantic page plan, then runs it as a resumable, ordered queue.
 - Reconciles material Claims against repository evidence, then projects
   provenance and sources into pages and the page manifest.
-- Detects source drift, checkpoints interruptions, rebuilds indexes, and
+- Detects source drift, preserves validated completed pages while marking their
+  source checkpoint interrupted for reconciliation, rebuilds indexes, and
   validates pages before completion.
 - Keeps a `quickstart.md` routing page and repository agent instructions
   current.

@@ -52,6 +52,12 @@ usable OKF front matter into a minimal, explicitly code-derived record. Existing
 usable metadata remains unchanged, so the update can enrich it without a manual
 format-conversion step.
 
+If repository source changes after all page jobs have been checkpointed, the
+finalizer still validates and preserves the completed documentation. It retains
+the run's planned source checkpoint and records `.last-update.json` as
+`interrupted`, which requires the next documentation request to reconcile the
+new source rather than incorrectly reporting the wiki as current.
+
 ## Host packaging
 
 | Host        | Manifest                     | Marketplace                        | Hook package       |
