@@ -11,6 +11,8 @@ as the work proceeds.
 - Writes focused architecture, workflow, operations, integration, and testing
   pages rather than a directory-by-directory inventory.
 - Creates a semantic page plan, then runs it as a resumable, ordered queue.
+- Reviews source changes from each page's own saved source baseline, preserving
+  correct incremental updates after partial or resumed runs.
 - Reconciles material Claims against repository evidence, then projects
   provenance and sources into pages and the page manifest.
 - Detects source drift, preserves validated completed pages while marking their

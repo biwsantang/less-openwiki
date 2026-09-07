@@ -1449,6 +1449,84 @@ test("an update is a no-op only with no visible source changes and no Claims deb
   );
 });
 
+test("update planning uses every page's manifest baseline, not only the last run", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  const page = path.join(root, "openwiki", "quickstart.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  const pageVersion = hash(await readFile(page));
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion,
+    claims: [],
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+  });
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "documented baseline"], {
+    cwd: root,
+  });
+  const pageBaseline = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".page-manifest.json"), {
+    schemaVersion: 1,
+    pages: {
+      "/openwiki/quickstart.md": {
+        gitHead: pageBaseline,
+        sourceFingerprint:
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        pageVersion,
+        completedBy: "openwiki/0.5.0",
+        completedRunId: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+      },
+    },
+  });
+  await writeFile(path.join(root, "README.md"), "# Updated fixture\n", "utf8");
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "source update"], {
+    cwd: root,
+  });
+  const lastRunHead = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    gitHead: lastRunHead,
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en",
+  });
+
+  const active = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation.",
+  });
+
+  assert.match(
+    active.hookSpecificOutput.additionalContext,
+    /Changed source paths: README.md/u,
+  );
+  assert.match(
+    active.hookSpecificOutput.additionalContext,
+    new RegExp(
+      `quickstart\\.md \\[base ${pageBaseline}; changed: README\\.md\\]`,
+      "u",
+    ),
+  );
+});
+
 test("a docs-only commit fast-forwards native manifest coverage during no-op", async (t) => {
   const root = await fixture(t);
   execFileSync("git", ["config", "user.email", "fixture@example.com"], {

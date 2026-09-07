@@ -54,6 +54,13 @@ adds work required to reconcile stale Claims and to complete a language rewrite.
 They are removed at checkpoints and never become documentation output. The
 skill does not edit durable lifecycle files directly.
 
+Update planning derives a source-review window for each factual page from that
+page's saved manifest Git revision, rather than assuming the most recent wiki
+run covered every page. The hook provides those grouped windows in its planning
+context; a page without a saved revision is explicitly marked for a full review.
+This preserves correct incremental updates after partially completed or resumed
+runs.
+
 Before an update begins, the lifecycle normalizes any factual page that lacks
 usable OKF front matter into a minimal, explicitly code-derived record. Existing
 usable metadata remains unchanged, so the update can enrich it without a manual

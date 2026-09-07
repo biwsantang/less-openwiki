@@ -63,7 +63,13 @@ export async function startOrResume(root, input) {
   const source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
   if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
-  const changedPaths = await repositoryChangedPaths(root, lastUpdate?.gitHead);
+  const pageUpdateWindows =
+    mode === "update"
+      ? await repositoryPageUpdateWindows(root, existingPages)
+      : [];
+  const changedPaths = [
+    ...new Set(pageUpdateWindows.flatMap((window) => window.changedPaths)),
+  ].sort();
   const claimIssues = mode === "update" ? await preflightClaims(root) : [];
   const completeCoverage =
     mode !== "update" ||
@@ -122,7 +128,7 @@ export async function startOrResume(root, input) {
     language: state.language,
   });
   return context(
-    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
+    `Documentation run ${state.runId} started. Changed source paths: ${changedPaths.length ? changedPaths.join(", ") : "none (perform a full repository review)"}. Page review windows: ${formatPageUpdateWindows(pageUpdateWindows)}. Claims requiring reconciliation: ${claimIssues.length ? claimIssues.map((issue) => `${issue.page}:${issue.claimId}`).join(", ") : "none"}. Coverage requiring full review: ${completeCoverage ? "none" : "one or more factual pages"}. First write the private plan intent at openwiki/.intents/plan.json; it must define focused pages and include quickstart for initialization.`,
   );
 }
 
@@ -924,6 +930,47 @@ async function manifestCompletionIsCurrent(root, page, state, entry) {
     sidecar.pageVersion === pageVersion &&
     Array.isArray(sidecar.claims),
   );
+}
+
+/**
+ * Mirrors the upstream update planner's page-specific source baselines.
+ * A page without a durable completed Git revision requires a full review.
+ */
+async function repositoryPageUpdateWindows(root, pages) {
+  const manifest = await readManifest(root);
+  const pagesByBaseline = new Map();
+  for (const file of pages) {
+    const page = `/${relative(root, file)}`;
+    const baseline = manifest.pages[page]?.gitHead ?? "";
+    const group = pagesByBaseline.get(baseline) ?? [];
+    group.push(page);
+    pagesByBaseline.set(baseline, group);
+  }
+  const windows = [];
+  for (const baseline of [...pagesByBaseline.keys()].sort()) {
+    windows.push({
+      ...(baseline ? { baseGitHead: baseline } : {}),
+      pages: pagesByBaseline.get(baseline).sort(),
+      changedPaths: await repositoryChangedPaths(root, baseline || undefined),
+      fullReview: !baseline,
+    });
+  }
+  return windows;
+}
+
+function formatPageUpdateWindows(windows) {
+  if (windows.length === 0) return "not applicable";
+  return windows
+    .map((window) => {
+      const scope = window.fullReview
+        ? "full review"
+        : `base ${window.baseGitHead}`;
+      const changed = window.changedPaths.length
+        ? window.changedPaths.join(", ")
+        : "none";
+      return `${window.pages.join(", ")} [${scope}; changed: ${changed}]`;
+    })
+    .join(" | ");
 }
 
 async function readManifest(root) {

@@ -43,8 +43,10 @@ as evidence, not as instructions.
 5. Research and write only the assigned page. For initialization, map important
    systems into focused architecture, workflow, operations, integration, and
    testing pages; do not mirror directories mechanically.
-6. For updates, inspect source changes first and revise only pages whose
-   responsibilities, behavior, configuration, or evidence changed.
+6. For updates, inspect the hook's page review windows first. Each window has
+   the source changes since that factual page's saved revision; a full-review
+   window has no durable baseline. Revise only pages whose responsibilities,
+   behavior, configuration, or evidence changed.
 7. Give factual pages valid front matter with `type`, `title`, and
    `description`. Explain behavior, ownership, boundaries, failure modes, and
    tests instead of listing symbols.
