@@ -78,23 +78,14 @@ export async function startOrResume(root, input) {
   const mode =
     requestedMode ?? (discoveredPages.length === 0 ? "init" : "update");
   const existingPages = mode === "init" ? [] : discoveredPages;
-  const source = await sourceSnapshot(root);
+  let source = await sourceSnapshot(root);
   const lastUpdate = await readLastUpdate(root);
   const replacement =
     mode === "init" ? await beginInitWikiReplacement(root) : null;
   try {
     if (mode === "update") await normalizeWikiOkf(root, lastUpdate?.language);
-    const pageUpdateWindows =
-      mode === "update"
-        ? await repositoryPageUpdateWindows(root, existingPages)
-        : [];
-    const changedPaths = [
-      ...new Set(pageUpdateWindows.flatMap((window) => window.changedPaths)),
-    ].sort();
-    const claimIssues = mode === "update" ? await preflightClaims(root) : [];
-    const completeCoverage =
-      mode !== "update" ||
-      (await hasCompleteManifestCoverage(root, existingPages));
+    let { pageUpdateWindows, changedPaths, claimIssues, completeCoverage } =
+      await updatePlanningState(root, mode, existingPages);
     if (
       mode === "update" &&
       lastUpdate?.status === "complete" &&
@@ -105,17 +96,23 @@ export async function startOrResume(root, input) {
       !hasExplicitLanguageRequest(input)
     ) {
       await fastForwardManifestCoverage(root, existingPages, source);
-      await writeJson(lastUpdatePath(root), {
-        updatedAt: now(),
-        command: "update",
-        ...(source.gitHead ? { gitHead: source.gitHead } : {}),
-        model: lastUpdate.model,
-        status: "complete",
-        language: lastUpdate.language ?? "en",
-      });
-      return context(
-        "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
-      );
+      const publishedSource = await sourceSnapshot(root);
+      if (publishedSource.fingerprint === source.fingerprint) {
+        await writeJson(lastUpdatePath(root), {
+          updatedAt: now(),
+          command: "update",
+          ...(source.gitHead ? { gitHead: source.gitHead } : {}),
+          model: lastUpdate.model,
+          status: "complete",
+          language: lastUpdate.language ?? "en",
+        });
+        return context(
+          "Documentation is current for the repository source. Inspect the existing pages and report the no-change result.",
+        );
+      }
+      source = publishedSource;
+      ({ pageUpdateWindows, changedPaths, claimIssues, completeCoverage } =
+        await updatePlanningState(root, mode, existingPages));
     }
     const state = {
       schemaVersion: 1,
@@ -1096,6 +1093,23 @@ async function manifestCompletionIsCurrent(root, page, state, entry) {
     sidecar.pageVersion === pageVersion &&
     Array.isArray(sidecar.claims),
   );
+}
+
+async function updatePlanningState(root, mode, existingPages) {
+  const pageUpdateWindows =
+    mode === "update"
+      ? await repositoryPageUpdateWindows(root, existingPages)
+      : [];
+  return {
+    pageUpdateWindows,
+    changedPaths: [
+      ...new Set(pageUpdateWindows.flatMap((window) => window.changedPaths)),
+    ].sort(),
+    claimIssues: mode === "update" ? await preflightClaims(root) : [],
+    completeCoverage:
+      mode !== "update" ||
+      (await hasCompleteManifestCoverage(root, existingPages)),
+  };
 }
 
 /**

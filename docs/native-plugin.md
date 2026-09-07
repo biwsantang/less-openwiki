@@ -68,6 +68,11 @@ context; a page without a saved revision is explicitly marked for a full review.
 This preserves correct incremental updates after partially completed or resumed
 runs.
 
+Before a clean update is reported as a no-op, the lifecycle re-snapshots source
+after advancing manifest coverage. If source moved during that durable write,
+it starts a normal interrupted update instead of publishing stale “current”
+metadata.
+
 While generating or resuming, the hook also supplies the complete current page
 job: its title, purpose, repository seed paths, related pages, and any planner
 instructions, plus the existing Claim count and any stale or unresolved Claim
