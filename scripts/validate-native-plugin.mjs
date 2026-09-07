@@ -17,6 +17,7 @@ const requiredFiles = [
   path.join(pluginRoot, "runtime", "claims.mjs"),
   path.join(pluginRoot, "runtime", "evidence.mjs"),
   path.join(pluginRoot, "runtime", "okf.mjs"),
+  path.join(pluginRoot, "runtime", "identity.mjs"),
   path.join(pluginRoot, "runtime", "vendor", "yaml.mjs"),
   path.join(pluginRoot, "runtime", "vendor", "NOTICE.md"),
   path.join(root, ".agents", "plugins", "marketplace.json"),
@@ -30,8 +31,9 @@ for (const file of requiredFiles) {
 const codexManifest = await readJson(requiredFiles[0]);
 const claudeManifest = await readJson(requiredFiles[1]);
 const hooks = await readJson(requiredFiles[3]);
-const codexMarketplace = await readJson(requiredFiles[12]);
-const claudeMarketplace = await readJson(requiredFiles[13]);
+const codexMarketplace = await readJson(requiredFiles[13]);
+const claudeMarketplace = await readJson(requiredFiles[14]);
+const identity = await import(path.join(pluginRoot, "runtime", "identity.mjs"));
 
 assert(
   codexManifest.name === "less-openwiki",
@@ -52,6 +54,11 @@ assert(
 assert(
   claudeManifest.version === "0.2.0",
   "Claude manifest version must be 0.2.0.",
+);
+assert(
+  identity.OPENWIKI_PRODUCER_ACTOR === `openwiki/${codexManifest.version}` &&
+    codexManifest.version === claudeManifest.version,
+  "Native producer actor must match the shared plugin version.",
 );
 for (const event of [
   "SessionStart",

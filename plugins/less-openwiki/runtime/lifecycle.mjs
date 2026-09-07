@@ -41,6 +41,7 @@ import {
   synchronizeClaimsVerification,
   validateOkfFrontmatter,
 } from "./okf.mjs";
+import { OPENWIKI_PRODUCER_ACTOR } from "./identity.mjs";
 
 export async function sessionContext(root) {
   const state = await loadRun(root);
@@ -1132,7 +1133,7 @@ function isWikiMarkdown(root, target) {
   );
 }
 function actorFor() {
-  return "openwiki/0.5.0";
+  return OPENWIKI_PRODUCER_ACTOR;
 }
 function modelFor(input) {
   return String(

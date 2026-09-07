@@ -128,7 +128,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     assert.match(result.hookSpecificOutput.additionalContext, /Recorded/u);
     assert.match(
       await readFile(absolute, "utf8"),
-      /verified:\n\s+- by: openwiki\/0\.5\.0/u,
+      /verified:\n\s+- by: openwiki\/0\.2\.0/u,
     );
     const checkpointManifest = JSON.parse(
       await readFile(
@@ -176,7 +176,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   assert.match(quickstart, new RegExp(`at: ${startedAt}`, "u"));
   assert.match(
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
-    /verified:\n\s+- by: openwiki\/0\.5\.0/u,
+    /verified:\n\s+- by: openwiki\/0\.2\.0/u,
   );
   assert.equal(
     await readFile(path.join(root, "openwiki", "index.md"), "utf8"),
@@ -1757,7 +1757,7 @@ test("a resumed run recovers a checkpointed page from durable manifest coverage"
   );
   const recovered = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(recovered.plan.pages[0].status, "complete");
-  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.5.0");
+  assert.equal(recovered.plan.pages[0].completedBy, "openwiki/0.2.0");
 });
 
 test("source drift invalidates a durable queue and returns the run to planning", async (t) => {
