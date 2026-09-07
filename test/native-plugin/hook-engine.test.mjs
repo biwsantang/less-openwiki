@@ -12,7 +12,10 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { reconcileClaims } from "../../plugins/less-openwiki/runtime/claims.mjs";
+import {
+  preflightClaims,
+  reconcileClaims,
+} from "../../plugins/less-openwiki/runtime/claims.mjs";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
 import {
   hash,
@@ -338,6 +341,20 @@ test("a stale Claim requires an explicit reconciliation decision", async (t) => 
       ],
     },
     "openwiki/0.5.0",
+  );
+});
+
+test("malformed durable Claims state fails closed during preflight", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", ".claims", "quickstart.json"),
+    '{"schemaVersion":1,"claims":[]}\n',
+    "utf8",
+  );
+  await assert.rejects(
+    preflightClaims(root),
+    /refusing to discard durable grounding state/u,
   );
 });
 

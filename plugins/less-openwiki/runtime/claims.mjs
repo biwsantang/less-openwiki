@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { hash, isFile, now, relative } from "./storage.mjs";
+import {
+  hash,
+  isFactualPage,
+  isFile,
+  now,
+  relative,
+  writeJson,
+} from "./storage.mjs";
 import { resolveRepositoryEvidence } from "./evidence.mjs";
 
 export function claimsPath(root, page) {
@@ -19,8 +26,9 @@ export async function preflightClaims(root) {
   if (!(await isFile(claimsRoot)) && !(await directoryExists(claimsRoot)))
     return issues;
   for (const file of await jsonFiles(claimsRoot)) {
-    const sidecar = JSON.parse(await readFile(file, "utf8"));
+    const sidecar = await loadClaims(file, { required: true });
     const page = `openwiki/${relative(claimsRoot, file).replace(/\.json$/u, ".md")}`;
+    if (!isFactualPage(page)) continue;
     for (const claim of sidecar.claims ?? []) {
       for (const evidence of claim.evidence ?? []) {
         const current = await resolveRepositoryEvidence(
@@ -145,11 +153,12 @@ export async function reconcileClaims(root, page, intent, actor) {
     throw new Error(
       `Completed factual page ${page} must retain or establish at least one material Claim.`,
     );
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(
-    file,
-    `${JSON.stringify({ schemaVersion: 1, pageVersion: hash(await readFile(path.join(root, page))), claims: next, verification: { by: actor, at: now() } }, null, 2)}\n`,
-  );
+  await writeJson(file, {
+    schemaVersion: 1,
+    pageVersion: hash(await readFile(path.join(root, page))),
+    claims: next,
+    verification: { by: actor, at: now() },
+  });
   return next;
 }
 
@@ -175,7 +184,7 @@ export async function refreshClaimsPageVersion(root, page) {
   const persisted = await loadClaims(file);
   if (!persisted) return;
   persisted.pageVersion = hash(await readFile(path.join(root, page)));
-  await writeFile(file, `${JSON.stringify(persisted, null, 2)}\n`);
+  await writeJson(file, persisted);
 }
 
 function sameEvidence(left, right) {
@@ -188,16 +197,63 @@ function sameEvidence(left, right) {
     )
   );
 }
-async function loadClaims(file) {
+async function loadClaims(file, { required = false } = {}) {
   try {
     const value = JSON.parse(await readFile(file, "utf8"));
-    if (value?.schemaVersion !== 1 || !Array.isArray(value.claims))
-      throw new Error("invalid claims schema");
+    if (!validClaims(value)) throw new Error("invalid claims schema");
     return value;
   } catch (error) {
-    if (error?.code === "ENOENT") return null;
-    throw error;
+    if (error?.code === "ENOENT" && !required) return null;
+    throw new Error(
+      `invalid OpenWiki Claims sidecar at ${file}; refusing to discard durable grounding state`,
+      { cause: error },
+    );
   }
+}
+
+function validClaims(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    Object.keys(value).every((key) =>
+      ["schemaVersion", "pageVersion", "claims", "verification"].includes(key),
+    ) &&
+    value.schemaVersion === 1 &&
+    /^sha256:[a-f0-9]{64}$/u.test(value.pageVersion) &&
+    Array.isArray(value.claims) &&
+    value.claims.every(
+      (claim) =>
+        claim &&
+        typeof claim === "object" &&
+        Object.keys(claim).every((key) =>
+          ["id", "statement", "evidence"].includes(key),
+        ) &&
+        nonEmpty(claim.id) &&
+        nonEmpty(claim.statement) &&
+        Array.isArray(claim.evidence) &&
+        claim.evidence.length > 0 &&
+        claim.evidence.every(
+          (evidence) =>
+            evidence &&
+            typeof evidence === "object" &&
+            Object.keys(evidence).length === 2 &&
+            nonEmpty(evidence.resource) &&
+            nonEmpty(evidence.version),
+        ),
+    ) &&
+    (value.verification === undefined ||
+      (value.verification &&
+        typeof value.verification === "object" &&
+        Object.keys(value.verification).length === 2 &&
+        nonEmpty(value.verification.by) &&
+        nonEmpty(value.verification.at)))
+  );
+}
+
+function nonEmpty(value) {
+  return (
+    typeof value === "string" && value.trim() === value && value.length > 0
+  );
 }
 async function directoryExists(file) {
   try {
