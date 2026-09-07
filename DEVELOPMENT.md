@@ -1,7 +1,6 @@
 # Development
 
-Less OpenWiki is developed as a native coding-agent plugin, not as a standalone
-CLI or MCP service.
+Less OpenWiki is a native coding-agent documentation plugin.
 
 ## Plugin layout
 
@@ -9,36 +8,45 @@ CLI or MCP service.
 - `plugins/less-openwiki/.claude-plugin/plugin.json` is the Claude Code
   manifest.
 - `plugins/less-openwiki/skills/less-openwiki/SKILL.md` is the shared workflow.
-- `plugins/less-openwiki/scripts/` contains dependency-free validation and
-  upstream-migration tools.
+- `plugins/less-openwiki/hooks/hooks.json` binds host lifecycle events to the
+  shared hook engine.
+- `plugins/less-openwiki/hooks/less-openwiki-hook.mjs` owns deterministic
+  state, validation, Claims sidecars, indexes, provenance, and recovery.
+- `plugins/less-openwiki/scripts/` contains validation and upstream-review
+  tooling.
 - `.agents/plugins/marketplace.json` and `.claude-plugin/marketplace.json`
   publish the plugin from this repository.
 
-Validate the distribution and existing repository documentation with:
+Validate the distribution and its lifecycle behavior with:
 
 ```sh
 pnpm plugin:validate
+pnpm plugin:test
 ```
+
+## Lifecycle changes
+
+Keep the boundary clear:
+
+- The skill directs repository research and Markdown authoring.
+- Hooks translate host events into the engine's deterministic actions.
+- The engine writes `openwiki/.run.json`, `.claims`, indexes, manifests,
+  provenance, and update metadata.
+
+Update the engine and its regression tests together whenever any lifecycle
+invariant changes. Check both hosts' hook schemas after changing
+`hooks/hooks.json`.
 
 ## Tracking upstream
 
-The legacy source tree remains only to make upstream feature migrations
-auditable. It is not a supported runtime.
-
 ```sh
 git fetch upstream main
-pnpm upstream:docs -- --base HEAD --upstream upstream/main --output upstream-docs-report.md
+pnpm upstream:docs --base HEAD --upstream upstream/main --output upstream-docs-report.md
 ```
 
-Review the report with the native skill. Port documentation behavior only when
-it fits the native-agent model; do not revive standalone CLI, MCP, or
-provider-auth surfaces by accident.
+Review the report with the shared skill. Route documentation changes to the
+skill and user docs, generation behavior to the engine and tests, workflows to
+CI, and adapter changes to the appropriate host package.
 
-## Editing the skill
-
-Keep `SKILL.md` focused on repository documentation. It should direct the host
-agent to research, author, and validate docs through native tools. It must not
-assume an OpenWiki MCP server, a bundled model, or user API keys.
-
-After editing plugin files, run `pnpm plugin:validate`. Start a new Codex or
-Claude Code session after reinstalling a plugin so the host reloads its skill.
+After editing plugin files, run the validation commands and start a new Codex
+or Claude Code session after reinstalling the plugin so the host reloads it.

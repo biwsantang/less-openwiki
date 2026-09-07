@@ -10,6 +10,8 @@ const requiredFiles = [
   path.join(pluginRoot, ".codex-plugin", "plugin.json"),
   path.join(pluginRoot, ".claude-plugin", "plugin.json"),
   path.join(pluginRoot, "skills", "less-openwiki", "SKILL.md"),
+  path.join(pluginRoot, "hooks", "hooks.json"),
+  path.join(pluginRoot, "hooks", "less-openwiki-hook.mjs"),
   path.join(root, ".agents", "plugins", "marketplace.json"),
   path.join(root, ".claude-plugin", "marketplace.json"),
 ];
@@ -20,8 +22,9 @@ for (const file of requiredFiles) {
 
 const codexManifest = await readJson(requiredFiles[0]);
 const claudeManifest = await readJson(requiredFiles[1]);
-const codexMarketplace = await readJson(requiredFiles[3]);
-const claudeMarketplace = await readJson(requiredFiles[4]);
+const hooks = await readJson(requiredFiles[3]);
+const codexMarketplace = await readJson(requiredFiles[5]);
+const claudeMarketplace = await readJson(requiredFiles[6]);
 
 assert(
   codexManifest.name === "less-openwiki",
@@ -35,6 +38,28 @@ assert(
   codexManifest.skills === "./skills/",
   "Codex manifest must declare the skills directory.",
 );
+assert(
+  codexManifest.version === "0.2.0",
+  "Codex manifest version must be 0.2.0.",
+);
+assert(
+  claudeManifest.version === "0.2.0",
+  "Claude manifest version must be 0.2.0.",
+);
+for (const event of [
+  "SessionStart",
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PostToolUse",
+  "Stop",
+  "SessionEnd",
+]) {
+  const command = hooks.hooks?.[event]?.[0]?.hooks?.[0]?.command;
+  assert(
+    typeof command === "string" && command.includes("less-openwiki-hook.mjs"),
+    `Hook package must wire ${event} to the shared engine.`,
+  );
+}
 assert(
   codexMarketplace.plugins?.[0]?.source?.path === "./plugins/less-openwiki",
   "Codex marketplace must point at the plugin.",
@@ -54,7 +79,7 @@ if (validation.status !== 0) {
 }
 
 process.stdout.write(
-  "Native plugin manifests and repository wiki are valid.\n",
+  "Native plugin manifests, hook package, and repository wiki are valid.\n",
 );
 
 async function readJson(file) {

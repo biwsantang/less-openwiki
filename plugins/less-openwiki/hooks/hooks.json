@@ -1,0 +1,80 @@
+{
+  "description": "Less OpenWiki repository documentation lifecycle.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'plugin_root=\"$PLUGIN_ROOT\"; if [ -z \"$plugin_root\" ]; then plugin_root=\"$CLAUDE_PLUGIN_ROOT\"; fi; [ -n \"$plugin_root\" ] || exit 0; exec node \"$plugin_root/hooks/less-openwiki-hook.mjs\" session-start'",
+            "timeout": 10,
+            "statusMessage": "Loading documentation run"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'plugin_root=\"$PLUGIN_ROOT\"; if [ -z \"$plugin_root\" ]; then plugin_root=\"$CLAUDE_PLUGIN_ROOT\"; fi; [ -n \"$plugin_root\" ] || exit 0; exec node \"$plugin_root/hooks/less-openwiki-hook.mjs\" user-prompt'",
+            "timeout": 10,
+            "statusMessage": "Preparing documentation run",
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'plugin_root=\"$PLUGIN_ROOT\"; if [ -z \"$plugin_root\" ]; then plugin_root=\"$CLAUDE_PLUGIN_ROOT\"; fi; [ -n \"$plugin_root\" ] || exit 0; exec node \"$plugin_root/hooks/less-openwiki-hook.mjs\" pre-tool'",
+            "timeout": 10,
+            "statusMessage": "Checking documentation write"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'plugin_root=\"$PLUGIN_ROOT\"; if [ -z \"$plugin_root\" ]; then plugin_root=\"$CLAUDE_PLUGIN_ROOT\"; fi; [ -n \"$plugin_root\" ] || exit 0; exec node \"$plugin_root/hooks/less-openwiki-hook.mjs\" post-tool'",
+            "timeout": 20,
+            "statusMessage": "Checkpointing documentation"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'plugin_root=\"$PLUGIN_ROOT\"; if [ -z \"$plugin_root\" ]; then plugin_root=\"$CLAUDE_PLUGIN_ROOT\"; fi; [ -n \"$plugin_root\" ] || exit 0; exec node \"$plugin_root/hooks/less-openwiki-hook.mjs\" stop'",
+            "timeout": 30,
+            "statusMessage": "Finalizing documentation"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'plugin_root=\"$PLUGIN_ROOT\"; if [ -z \"$plugin_root\" ]; then plugin_root=\"$CLAUDE_PLUGIN_ROOT\"; fi; [ -n \"$plugin_root\" ] || exit 0; exec node \"$plugin_root/hooks/less-openwiki-hook.mjs\" session-end'",
+            "timeout": 3,
+            "statusMessage": "Saving documentation checkpoint"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,51 +1,70 @@
 # Native Plugin Architecture
 
-## Product boundary
-
-Less OpenWiki is a documentation workflow packaged as a Codex plugin and a
-Claude Code plugin. The host agent supplies its model, file tools, Git access,
-and approval policy. The plugin supplies the repeatable documentation method,
-deterministic validation, and upstream migration reporting.
+Less OpenWiki packages one documentation workflow for Codex and Claude Code.
+The host agent researches and writes; the plugin provides the durable lifecycle
+around that work.
 
 ```text
-Host agent + Less OpenWiki skill
-          │
-          ├── repository research and Markdown authoring
-          ├── validate-wiki.mjs
-          └── upstream-docs-report.mjs
+documentation request
+        │
+        ▼
+shared skill ──► research and page authoring
+        │                    │
+        ▼                    ▼
+required hooks ─────► state, Claims, indexes, validation, provenance
+        │
+        ▼
+resumable completion
 ```
 
-There is no standalone `openwiki` command, local MCP lifecycle service, or
-second provider/model configuration in this distribution.
+## Lifecycle
 
-## Compatibility
+The hook engine runs at the native lifecycle points supplied by each host:
 
-The plugin root contains both manifests and one shared skill:
+| Event                                 | Outcome                                                                           |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| `SessionStart` and `UserPromptSubmit` | Load or begin the durable documentation run.                                      |
+| `PreToolUse`                          | Keep generated-page work on the assigned page and protect lifecycle-owned state.  |
+| `PostToolUse`                         | Validate the page, synchronize its Claims sidecar, and checkpoint queue progress. |
+| `Stop`                                | Finalize only when every queued page is valid; otherwise keep the run active.     |
+| `SessionEnd`                          | Persist an interrupted checkpoint for the next session.                           |
 
-| Host        | Manifest                     | Marketplace                        |
-| ----------- | ---------------------------- | ---------------------------------- |
-| Codex       | `.codex-plugin/plugin.json`  | `.agents/plugins/marketplace.json` |
-| Claude Code | `.claude-plugin/plugin.json` | `.claude-plugin/marketplace.json`  |
+The engine is an ordinary module invoked by these hooks. It has no background
+service and no user-facing control surface. Its durable repository outputs are:
 
-The shared skill uses only host-native repository capabilities, so it avoids a
-host-specific tool protocol. Host-specific hooks remain optional and must only
-validate or provide status; they must not become a second agent runtime.
+- `openwiki/.run.json` while a run is active;
+- `openwiki/.claims/` for page grounding state;
+- `openwiki/.page-manifest.json` for completed-page coverage; and
+- `openwiki/.last-update.json` after completion or interruption.
 
-## Upstream migration contract
+The skill never edits those files directly. It reads the hook-provided current
+page, researches repository evidence, and writes that page's Markdown.
 
-The `upstream-docs-report.mjs` script compares the merge base of a local base
-ref and an upstream ref with the upstream side. This yields the upstream changes
-that arrived after the branches diverged, even when the fork has native-plugin
-changes of its own.
+## Host packaging
 
-The report classifies files so migration stays intentional:
+| Host        | Manifest                     | Marketplace                        | Hook package       |
+| ----------- | ---------------------------- | ---------------------------------- | ------------------ |
+| Codex       | `.codex-plugin/plugin.json`  | `.agents/plugins/marketplace.json` | `hooks/hooks.json` |
+| Claude Code | `.claude-plugin/plugin.json` | `.claude-plugin/marketplace.json`  | `hooks/hooks.json` |
 
-- **Documentation** and **Generation behavior** are candidates for porting into
-  the skill or validators.
-- **Workflows** are candidates when they verify the plugin or report upstream
-  drift without running an LLM.
-- **Legacy CLI/MCP** changes are tracked but excluded by default.
+The package uses each host's native hook payload and policy response shape, but
+both call the same engine and write the same repository state.
 
-The scheduled workflow creates the report as a GitHub Actions summary and
-artifact. It does not modify documentation or open a pull request; an agent or
-maintainer reviews the report before migrating behavior.
+## Upstream maintenance
+
+`upstream-docs-report.mjs` compares the merge base of the current branch and
+the configured upstream branch, then groups upstream changes by the component
+that should receive them:
+
+| Incoming change     | Primary destination                          |
+| ------------------- | -------------------------------------------- |
+| Documentation       | Shared skill and user documentation          |
+| Generation behavior | Hook engine and lifecycle tests              |
+| Workflows           | Repository workflows and validation          |
+| Tests               | Compatibility fixtures and regression tests  |
+| Runtime adapters    | Host packaging or a documented design review |
+| Supporting code     | Maintainer review                            |
+
+The scheduled workflow publishes this report as a GitHub Actions summary and
+artifact. Maintainers review it before changing the plugin, so behavior changes
+remain explicit and testable.

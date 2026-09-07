@@ -1,7 +1,7 @@
 {
   "name": "less-openwiki",
-  "version": "0.1.0",
-  "description": "Native repository documentation workflow for Codex and Claude Code.",
+  "version": "0.2.0",
+  "description": "Repository documentation workflow with durable native lifecycle hooks.",
   "author": {
     "name": "Biw Santang",
     "url": "https://github.com/biwsantang"
@@ -14,10 +14,14 @@
   "interface": {
     "displayName": "Less OpenWiki",
     "shortDescription": "Maintain repository documentation with your coding agent.",
-    "longDescription": "A native documentation workflow for coding agents. It uses the host agent's own model and repository tools, with no OpenWiki CLI or MCP server.",
+    "longDescription": "A repository documentation workflow that uses native lifecycle hooks for resumable pages, validation, provenance, and completion.",
     "developerName": "Biw Santang",
     "category": "Productivity",
-    "capabilities": ["Documentation", "Local repository tools"],
+    "capabilities": [
+      "Documentation",
+      "Lifecycle hooks",
+      "Local repository tools"
+    ],
     "defaultPrompt": [
       "Initialize documentation for this repository.",
       "Update the repository documentation for recent source changes.",

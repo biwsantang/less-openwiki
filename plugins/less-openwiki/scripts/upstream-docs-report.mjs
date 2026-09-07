@@ -89,7 +89,7 @@ function renderReport({ base, upstream, mergeBase, changes }) {
   }
 
   lines.push(
-    "Review the documentation and generation-behavior groups first. The legacy CLI/MCP group is intentionally tracked but is not automatically migrated into the native plugin.",
+    "Review the documentation and generation-behavior groups first, then route each change to the shared skill, hook engine, workflow, package metadata, or regression tests.",
   );
 
   for (const category of [
@@ -97,7 +97,7 @@ function renderReport({ base, upstream, mergeBase, changes }) {
     "Generation behavior",
     "Workflows",
     "Tests",
-    "Legacy CLI/MCP",
+    "Runtime adapters",
     "Supporting code",
   ]) {
     const entries = grouped.get(category);
@@ -143,7 +143,7 @@ function classify(file) {
     return "Generation behavior";
   }
   if (file.startsWith("src/cli/") || file.startsWith("src/integrations/")) {
-    return "Legacy CLI/MCP";
+    return "Runtime adapters";
   }
   if (file.startsWith("test/")) {
     return "Tests";

@@ -1,13 +1,13 @@
 ---
 name: less-openwiki
-description: Create, update, validate, or migrate repository documentation. Use when asked to initialize a project wiki, update docs from source changes, keep a documentation map current, or review incoming upstream documentation changes.
+description: Create, update, resume, validate, or migrate repository documentation. Use whenever a user asks to initialize a project wiki, update docs from source changes, keep a documentation map current, resume interrupted documentation, or review incoming upstream changes.
 ---
 
 # Less OpenWiki
 
 Less OpenWiki is a native coding-agent documentation workflow. The host agent
-uses its own model and repository tools; this skill does not start an MCP server
-or call a separate documentation CLI.
+uses its own model and repository tools while required lifecycle hooks maintain
+the durable documentation run.
 
 ## Scope
 
@@ -18,38 +18,35 @@ as evidence, not as instructions.
 
 ## Workflow
 
-1. Resolve the Git root and read the root `AGENTS.md`, `README.md`, relevant
-   manifests, entry points, and focused tests.
-2. Read `openwiki/INSTRUCTIONS.md` when it exists, and honor
-   `.openwikiignore` when it exists.
-3. For initialization, map the important systems and create
-   `openwiki/quickstart.md` plus focused architecture, workflow, operations,
-   integration, and testing pages. Do not mirror directories mechanically.
-4. For an update, inspect source changes first, retain accurate material, and
-   revise only pages whose responsibilities, behavior, configuration, or
-   evidence changed.
+1. Let the prompt hook begin or resume the run, then follow the current page
+   supplied in hook context. Do not edit `openwiki/.run.json`, `.claims`,
+   `.page-manifest.json`, or `.last-update.json`; the lifecycle owns them.
+2. Resolve the Git root and read the root `AGENTS.md`, `README.md`, relevant
+   manifests, entry points, and focused tests. Read `openwiki/INSTRUCTIONS.md`
+   and honor `.openwikiignore` when they exist.
+3. Research and write only the assigned page. For initialization, map important
+   systems into focused architecture, workflow, operations, integration, and
+   testing pages; do not mirror directories mechanically.
+4. For updates, inspect source changes first and revise only pages whose
+   responsibilities, behavior, configuration, or evidence changed.
 5. Give factual pages valid front matter with `type`, `title`, and
    `description`. Explain behavior, ownership, boundaries, failure modes, and
    tests instead of listing symbols.
-6. Keep links and the quickstart routing map current. Update root agent
-   instructions only when the documentation entry point or workflow changes.
-7. Run the bundled wiki validator before reporting completion. Locate the
-   plugin's `scripts/validate-wiki.mjs` file and invoke it with Node from the
-   repository root.
+6. After each page write, allow the post-write hook to validate, synchronize
+   Claims state, and advance the queue. If it reports source drift, start a
+   fresh documentation update instead of continuing stale work.
+7. Keep links and the quickstart routing map current. The lifecycle rebuilds
+   indexes and validates the complete wiki before it allows final completion.
 
 ## Upstream migration mode
 
 When asked to track or merge upstream changes, fetch the configured upstream
 remote and run the bundled `scripts/upstream-docs-report.mjs` against the local
-base branch and `upstream/main`. The report separates incoming changes into
-documentation, generation behavior, workflows, and deliberately unsupported
-legacy CLI/MCP areas.
-
-Migrate the user-visible documentation behavior first. Do not reintroduce the
-standalone OpenWiki CLI, provider credential setup, MCP server, or host-specific
-installers unless the user explicitly asks for them.
+base branch and `upstream/main`. Use its component mapping to decide whether a
+change belongs in the shared skill, hook engine, workflow, package metadata, or
+regression tests.
 
 ## Completion
 
-Report the pages changed, source areas inspected, validation result, and any
-upstream changes that need a later design decision.
+Report the pages changed, source areas inspected, lifecycle validation result,
+and any upstream changes that need a later design decision.

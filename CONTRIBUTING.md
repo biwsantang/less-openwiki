@@ -1,41 +1,39 @@
 # Contributing to Less OpenWiki
 
 Less OpenWiki is a native coding-agent documentation plugin. Contributions
-should improve the shared skill, its local validators, documentation quality,
-or the upstream migration path.
+improve the shared skill, lifecycle hooks, deterministic engine, documentation,
+or upstream maintenance path.
 
 ## Scope
 
-Keep each pull request to one of these areas:
+Keep each pull request focused on one of these areas:
 
 - repository documentation workflow and templates;
-- plugin compatibility for Codex or Claude Code;
-- deterministic validation and migration tooling;
+- Codex or Claude Code package compatibility;
+- lifecycle state, validation, Claims, indexes, provenance, or recovery;
+- upstream-change review tooling;
 - documentation and workflow maintenance.
-
-Do not add a standalone documentation CLI, an MCP lifecycle server, model
-provider configuration, or host-specific installers unless the project
-explicitly adopts that broader product direction.
 
 ## Before opening a PR
 
 ```sh
 pnpm plugin:validate
+pnpm plugin:test
 pnpm run format:check
 ```
 
-If upstream is involved, include the generated upstream migration report and
-state which Documentation or Generation behavior changes were carried forward.
-Legacy CLI/MCP changes should be recorded as intentionally not migrated unless
-the PR has an approved replacement in the native plugin.
+If upstream is involved, include the generated upstream-change report and state
+which component receives the change: shared skill, hook engine, workflow,
+package metadata, or regression test.
 
 ## Plugin compatibility
 
-The plugin must keep both manifests synchronized:
+Keep the manifests and hook package synchronized:
 
 - Codex: `plugins/less-openwiki/.codex-plugin/plugin.json`
 - Claude Code: `plugins/less-openwiki/.claude-plugin/plugin.json`
+- shared hooks: `plugins/less-openwiki/hooks/hooks.json`
 
-Keep the shared workflow in `plugins/less-openwiki/skills/less-openwiki/`.
-Both hosts use their own model sessions and repository tools; the plugin must
-not require separate provider credentials.
+Both hosts use the shared workflow and deterministic engine. Preserve the
+repository output contracts described in [native plugin
+architecture](docs/native-plugin.md).

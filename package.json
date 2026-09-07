@@ -1,7 +1,7 @@
 {
   "name": "less-openwiki",
-  "version": "0.1.0",
-  "description": "A native Codex and Claude Code documentation plugin with upstream migration tooling.",
+  "version": "0.2.0",
+  "description": "A durable native Codex and Claude Code repository documentation plugin.",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -37,7 +37,8 @@
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "plugin:validate": "node scripts/validate-native-plugin.mjs",
-    "test": "pnpm run plugin:validate",
+    "plugin:test": "node --test test/native-plugin/hook-engine.test.mjs",
+    "test": "pnpm run plugin:validate && pnpm run plugin:test",
     "upstream:docs": "node plugins/less-openwiki/scripts/upstream-docs-report.mjs",
     "upstream:build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/copy-visualize-assets.cjs",
     "upstream:test": "pnpm run upstream:build && vitest run"

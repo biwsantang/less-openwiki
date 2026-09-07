@@ -1,39 +1,39 @@
 # Less OpenWiki
 
-Less OpenWiki is a native repository-documentation plugin for **Codex** and
-**Claude Code**. Your coding agent researches the repository, writes Markdown,
-and validates the result with its own authenticated model and local tools.
-
-It intentionally does **not** run an OpenWiki CLI, configure model providers,
-or start an MCP server.
+Less OpenWiki turns a coding agent into a reliable repository-documentation
+partner for Codex and Claude Code. It researches the repository, writes a
+focused `openwiki/` knowledge base, and maintains durable documentation state
+as the work proceeds.
 
 ## What it does
 
-- Initializes and updates an `openwiki/` documentation map for a repository.
-- Produces focused architecture, workflow, operations, integration, and testing
+- Initializes and updates an `openwiki/` documentation map.
+- Writes focused architecture, workflow, operations, integration, and testing
   pages rather than a directory-by-directory inventory.
-- Maintains a `quickstart.md` routing page and repository agent instructions.
-- Requires factual pages to have portable `type`, `title`, and `description`
-  front matter.
-- Validates documentation before the agent reports completion.
-- Reports upstream documentation, generation, workflow, and legacy-runtime
-  changes so this fork can be reconciled deliberately.
+- Runs each update as a resumable, ordered page queue.
+- Preserves generated-page provenance through Claims sidecars and a page
+  manifest.
+- Detects source drift, checkpoints interruptions, rebuilds indexes, and
+  validates pages before completion.
+- Keeps a `quickstart.md` routing page and repository agent instructions
+  current.
+- Produces a reviewable upstream-change report for maintainers.
 
 ## Install
 
 ### Codex
 
 This repository contains a Codex marketplace at
-`.agents/plugins/marketplace.json`. Add the repository as a local marketplace,
-install `less-openwiki`, and start a new Codex thread.
+`.agents/plugins/marketplace.json`.
 
 ```sh
 codex plugin marketplace add .
 codex plugin add less-openwiki@less-openwiki
 ```
 
-Invoke it explicitly with `$less-openwiki`, or ask Codex to initialize or update
-repository documentation.
+Start a new Codex thread, invoke `$less-openwiki`, or ask Codex to initialize
+or update repository documentation. Review and trust the plugin hooks when
+Codex asks; they keep documentation runs durable across the full lifecycle.
 
 ### Claude Code
 
@@ -45,7 +45,7 @@ This repository also contains a Claude Code marketplace and plugin manifest.
 ```
 
 Invoke `/less-openwiki:less-openwiki`, or ask Claude Code to initialize or
-update the repository documentation.
+update repository documentation.
 
 ## Use
 
@@ -54,54 +54,39 @@ Typical prompts are:
 ```text
 Initialize documentation for this repository.
 Update the documentation for the current source changes.
-Review the upstream documentation migration report and apply the relevant changes.
+Resume the interrupted documentation update.
 ```
 
-The skill uses `openwiki/` as the default documentation directory. It honors
-`openwiki/INSTRUCTIONS.md` and `.openwikiignore` when they exist.
+The workflow uses `openwiki/` as its default documentation directory. It
+honors `openwiki/INSTRUCTIONS.md` and `.openwikiignore` when they exist.
 
-## Upstream documentation migration
+## Upstream change review
 
-The original OpenWiki implementation remains in this fork as an
-**upstream-reference source tree**. It is not part of the native plugin's
-runtime. Keeping it in place makes upstream changes inspectable instead of
-silently losing useful documentation behavior.
-
-Fetch upstream, generate a report, then use the native skill to migrate the
-documentation-relevant changes:
+Fetch upstream and generate a review report whenever maintaining the fork:
 
 ```sh
 git fetch upstream main
-pnpm upstream:docs -- --base HEAD --upstream upstream/main --output upstream-docs-report.md
+pnpm upstream:docs --base HEAD --upstream upstream/main --output upstream-docs-report.md
 ```
 
-The report separates incoming changes into Documentation, Generation behavior,
-Workflows, Tests, Legacy CLI/MCP, and Supporting code. Native-plugin migration
-does not automatically restore CLI/MCP behavior.
-
-## Deliberately out of scope
-
-- Standalone `openwiki` commands, terminal UI, and provider credential setup.
-- The OpenWiki MCP server and host-specific integration installers.
-- Personal knowledge mode, OAuth connectors, ngrok, and connector scheduling.
-- Automatic scheduled LLM documentation rewrites.
-
-These features depended on a second agent runtime or external integrations.
-They can be designed as separate opt-in plugins later without complicating the
-repository-documentation workflow.
+The report classifies incoming work by documentation, generation behavior,
+workflows, tests, runtime adapters, and supporting code. Review it with the
+plugin and carry relevant behavior into the shared skill, lifecycle hooks, or
+engine as appropriate.
 
 ## Validation and development
 
 ```sh
 pnpm plugin:validate
+pnpm plugin:test
 pnpm upstream:docs
 ```
 
-`plugin:validate` checks both plugin manifests, both marketplaces, the native
-skill, and the repository wiki front matter. See
-[native plugin architecture](docs/native-plugin.md) for the compatibility and
-maintenance model.
+`plugin:validate` checks the marketplaces, manifests, skill, hook package, and
+repository wiki. `plugin:test` exercises lifecycle checkpointing, source drift,
+Claims sidecars, manifest generation, and finalization. See [native plugin
+architecture](docs/native-plugin.md) for the component model.
 
 ## License
 
-MIT. The upstream-reference source is retained under its original MIT license.
+MIT.
