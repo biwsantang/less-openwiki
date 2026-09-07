@@ -409,9 +409,14 @@ async function resumeActiveRun(root, state) {
       "Repository source changed since this documentation run started. Write a fresh semantic plan before generated Markdown.",
     );
   }
+  let changed = false;
+  if (!state.targetGitHead && source.gitHead) {
+    state.targetGitHead = source.gitHead;
+    changed = true;
+  }
   const resetSkipped = resetSkippedPageJobs(state);
   const reconciled = await reconcileManifestPageJobs(root, state);
-  if (resetSkipped || reconciled) await writeRun(root, state);
+  if (changed || resetSkipped || reconciled) await writeRun(root, state);
   return sessionContext(root);
 }
 

@@ -78,6 +78,10 @@ any run state is written. A resumed run cannot switch languages; use a new
 update after the active run has completed or been reconciled. Conversational
 language requests remain representable in the semantic plan.
 
+On a stable resume, legacy run state that lacks its target Git revision is
+backfilled from the current repository head before page coverage is reconciled.
+Source drift instead replaces the old plan and establishes a new target.
+
 While generating or resuming, the hook also supplies the complete current page
 job: its title, purpose, repository seed paths, related pages, and any planner
 instructions, plus the existing Claim count and any stale or unresolved Claim

@@ -2027,6 +2027,48 @@ test("a resumed run retries a durable skipped page", async (t) => {
   );
 });
 
+test("a stable resume backfills a legacy native target Git head", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  execFileSync("git", ["add", "README.md"], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: root,
+  });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Create repository documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      { path: "quickstart.md", title: "Quickstart", purpose: "Route readers." },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const runFile = path.join(root, "openwiki", ".run.json");
+  const legacy = JSON.parse(await readFile(runFile, "utf8"));
+  delete legacy.targetGitHead;
+  await writeJson(runFile, legacy);
+
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Resume documentation.",
+  });
+  assert.equal(JSON.parse(await readFile(runFile, "utf8")).targetGitHead, head);
+});
+
 test("source drift invalidates a durable queue and returns the run to planning", async (t) => {
   const root = await fixture(t);
   invoke(root, "user-prompt", {
