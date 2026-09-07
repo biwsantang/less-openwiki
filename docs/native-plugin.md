@@ -33,7 +33,9 @@ The hook adapter is intentionally thin. It invokes three ordinary internal
 modules: lifecycle (state, planning, snapshot, checkpoint and rollback),
 Claims (evidence and reconciliation), and OKF (front matter, provenance,
 sources, indexes and links). They have no background service and no user-facing
-control surface. Durable repository outputs are:
+control surface. Pre- and post-tool hooks receive every tool event; the runtime
+only intervenes when the event names lifecycle state, a private intent, or a
+generated documentation page. Durable repository outputs are:
 
 - `openwiki/.run.json` while a run is active;
 - `openwiki/.claims/` for page grounding state;
