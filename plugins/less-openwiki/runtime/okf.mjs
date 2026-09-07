@@ -72,21 +72,21 @@ function conceptTypeFor(language) {
 }
 
 /** Applies page-local provenance and Claims-source projections after Claims succeeds. */
-export async function finalizePage(root, page, actor, claims) {
+export async function finalizePage(root, page, actor, claims, at) {
   await projectClaimSources(root, page, claims);
   const file = path.join(root, page);
   const content = await readFile(file, "utf8");
   const next = content.replace(
     /^---\r?\n([\s\S]*?)\r?\n---/u,
     (_all, frontmatter) =>
-      `---\n${frontmatter.replace(/^generated:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\ngenerated:\n  by: ${actor}\n  at: ${new Date().toISOString()}\n---`,
+      `---\n${frontmatter.replace(/^generated:\n(?:[ \t].*\n?)*/mu, "").trimEnd()}\ngenerated:\n  by: ${actor}\n  at: ${at}\n---`,
   );
   const generated = next.endsWith("\n") ? next : `${next}\n`;
-  const verified = synchronizeVerification(generated, actor);
+  const verified = synchronizeVerification(generated, actor, at);
   if (verified !== content) await writeFile(file, verified, "utf8");
 }
 
-function synchronizeVerification(content, actor) {
+function synchronizeVerification(content, actor, at) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
   if (!match) return content;
   const retained = [];
@@ -120,7 +120,7 @@ function synchronizeVerification(content, actor) {
     .replace(/^verified:\n(?:^[ \t].*(?:\n|$))*/mu, "")
     .trimEnd();
   const existing = retained.length ? `${retained.join("\n")}\n` : "";
-  const block = `verified:\n${existing}  - by: ${actor}\n    at: ${new Date().toISOString()}\n`;
+  const block = `verified:\n${existing}  - by: ${actor}\n    at: ${at}\n`;
   return content.replace(
     /^---\r?\n([\s\S]*?)\r?\n---/u,
     `---\n${clean}\n${block}---`,
@@ -130,6 +130,7 @@ function synchronizeVerification(content, actor) {
 /** Builds deterministic OKF v0.2 navigation indexes after Claims validation. */
 export async function finalizeWiki(root, language = "en") {
   const wikiRoot = path.join(root, "openwiki");
+  await degradeInvalidMermaid(root);
   const labels = indexLabels(language);
   for (const directory of await directories(wikiRoot)) {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -175,7 +176,6 @@ export async function finalizeWiki(root, language = "en") {
     if (existing !== content) await writeFile(index, content, "utf8");
   }
   await validateInternalLinks(root);
-  await degradeInvalidMermaid(root);
 }
 
 function renderIndex(files, directories, isRoot, labels) {

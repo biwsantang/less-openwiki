@@ -38,6 +38,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   const runFile = path.join(root, "openwiki", ".run.json");
   let state = JSON.parse(await readFile(runFile, "utf8"));
   assert.equal(state.phase, "planning");
+  const startedAt = state.startedAt;
   assert.equal(state.previousLastUpdate, null);
 
   await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
@@ -116,9 +117,11 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
   );
   assert.equal(claims.schemaVersion, 1);
   assert.equal(claims.claims.length, 1);
+  assert.equal(claims.verification.at, startedAt);
   assert.match(claims.pageVersion, /^sha256:/u);
   const quickstart = await readFile(
     path.join(root, "openwiki", "quickstart.md"),
+    "utf8",
   );
   assert.equal(claims.pageVersion, hash(quickstart));
   const manifest = JSON.parse(
@@ -129,6 +132,7 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
     /generated:/u,
   );
+  assert.match(quickstart, new RegExp(`at: ${startedAt}`, "u"));
   assert.match(
     await readFile(path.join(root, "openwiki", "quickstart.md"), "utf8"),
     /verified:\n\s+- by: openwiki\/0\.5\.0/u,

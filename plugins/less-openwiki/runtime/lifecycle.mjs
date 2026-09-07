@@ -178,8 +178,15 @@ export async function checkpoint(root, input) {
     current.path,
     intent,
     state.actor.producerActor,
+    state.startedAt,
   );
-  await finalizePage(root, current.path, state.actor.producerActor, claims);
+  await finalizePage(
+    root,
+    current.path,
+    state.actor.producerActor,
+    claims,
+    state.startedAt,
+  );
   await refreshClaimsPageVersion(root, current.path);
   await recordManifestPageCompletion(root, current.path, state);
   current.status = "complete";

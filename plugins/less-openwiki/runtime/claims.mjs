@@ -84,7 +84,7 @@ export async function removeOrphanClaims(root) {
   }
 }
 
-export async function reconcileClaims(root, page, intent, actor) {
+export async function reconcileClaims(root, page, intent, actor, at = now()) {
   const file = claimsPath(root, page);
   const existing = (await loadClaims(file))?.claims ?? [];
   const proposed = intent?.claims ?? [];
@@ -183,7 +183,7 @@ export async function reconcileClaims(root, page, intent, actor) {
     schemaVersion: 1,
     pageVersion: hash(await readFile(path.join(root, page))),
     claims: next,
-    verification: { by: actor, at: now() },
+    verification: { by: actor, at },
   });
   return next;
 }
