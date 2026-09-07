@@ -30,6 +30,7 @@ import {
   validateOkfFrontmatter,
 } from "../../plugins/less-openwiki/runtime/okf.mjs";
 import {
+  factualPages,
   hash,
   repositoryChangedPaths,
   sourceSnapshot,
@@ -527,6 +528,27 @@ test("a native skip removes a newly planned page that had no pre-run snapshot", 
       ),
     ).pages,
     {},
+  );
+});
+
+test("factual page discovery excludes hidden lifecycle directories", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".rollback", "run", "nested"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(root, "openwiki", ".rollback", "run", "nested", "page.md"),
+    "# Private snapshot\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(root, "openwiki", "visible.md"),
+    "# Public documentation\n",
+    "utf8",
+  );
+  assert.deepEqual(
+    (await factualPages(root)).map((file) => path.relative(root, file)),
+    ["openwiki/visible.md"],
   );
 });
 
