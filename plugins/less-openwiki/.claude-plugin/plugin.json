@@ -1,7 +1,7 @@
 {
   "name": "less-openwiki",
-  "description": "Repository documentation workflow with durable native lifecycle hooks.",
-  "version": "0.4.1",
+  "description": "Repository documentation workflow for your coding agent.",
+  "version": "1.0.0",
   "author": {
     "name": "Biw Santang"
   },

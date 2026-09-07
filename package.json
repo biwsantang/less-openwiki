@@ -1,7 +1,7 @@
 {
   "name": "less-openwiki",
-  "version": "0.4.1",
-  "description": "A durable native Codex and Claude Code repository documentation plugin.",
+  "version": "1.0.0",
+  "description": "A skill-only Codex and Claude Code repository documentation plugin.",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -34,73 +34,12 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint . --fix",
-    "lint:check": "eslint .",
     "plugin:validate": "node scripts/validate-native-plugin.mjs",
-    "plugin:test": "node --test test/native-plugin/hook-engine.test.mjs",
-    "test": "pnpm run plugin:validate && pnpm run plugin:test",
-    "upstream:docs": "node plugins/less-openwiki/scripts/upstream-docs-report.mjs",
-    "upstream:build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/copy-visualize-assets.cjs",
-    "upstream:test": "pnpm run upstream:build && vitest run"
-  },
-  "dependencies": {
-    "@anthropic-ai/vertex-sdk": "^0.19.6",
-    "@aws-sdk/client-bedrock-runtime": "^3.1120.0",
-    "@langchain/anthropic": "^1.5.8",
-    "@langchain/aws": "^1.4.4",
-    "@langchain/core": "^1.2.9",
-    "@langchain/google": "^0.2.3",
-    "@langchain/langgraph-checkpoint-sqlite": "^1.0.4",
-    "@langchain/openai": "^1.5.11",
-    "@langchain/openrouter": "^0.4.10",
-    "@langchain/protocol": "^0.0.19",
-    "@langchain/tavily": "1.2.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "ci-info": "^4.4.0",
-    "cron-parser": "5.10.0",
-    "cronstrue": "3.24.0",
-    "deepagents": "1.13.2",
-    "google-auth-library": "^11.0.2",
-    "ink": "^5.2.1",
-    "jsonc-parser": "^3.3.1",
-    "langchain": "^1.5.10",
-    "langsmith": "^0.9.0",
-    "marked": "^18.0.11",
-    "posthog-node": "^5.51.4",
-    "react": "^18.3.1",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
-  },
-  "peerDependencies": {
-    "jsdom": "^29.1.1",
-    "mermaid": "^11.16.0"
-  },
-  "peerDependenciesMeta": {
-    "jsdom": {
-      "optional": true
-    },
-    "mermaid": {
-      "optional": true
-    }
+    "test": "pnpm run plugin:validate",
+    "upstream:docs": "node scripts/upstream-docs-report.mjs"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "1.0.0",
-    "@changesets/cli": "3.0.1",
-    "@eslint/js": "^10.0.1",
-    "@types/better-sqlite3": "^9.6.0",
-    "@types/jsdom": "^30.0.0",
-    "@types/node": "^26.4.0",
-    "@types/react": "^18.3.31",
-    "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^10.9.1",
-    "ink-testing-library": "^4.0.0",
-    "jsdom": "^30.0.1",
-    "mermaid": "^11.17.2",
-    "prettier": "^3.9.6",
-    "tsx": "^4.23.12",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.68.0",
-    "vitest": "^4.1.11"
+    "prettier": "^3.9.6"
   },
   "packageManager": "pnpm@11.25.0"
 }

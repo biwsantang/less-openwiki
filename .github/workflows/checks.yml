@@ -1,4 +1,4 @@
-name: Native Plugin Checks
+name: Skill Plugin Checks
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   plugin:
-    name: Validate native plugin
+    name: Validate skill plugin
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -27,11 +27,8 @@ jobs:
       - name: Install locked toolchain
         run: pnpm install --frozen-lockfile
 
-      - name: Validate manifests, skill, hooks, and documentation
+      - name: Validate manifests, skill, and documentation
         run: pnpm plugin:validate
-
-      - name: Exercise native lifecycle
-        run: pnpm plugin:test
 
       - name: Check repository formatting
         run: pnpm format:check
@@ -39,13 +36,5 @@ jobs:
       - name: Check plugin script syntax
         run: |
           node --check scripts/validate-native-plugin.mjs
-          node --check plugins/less-openwiki/scripts/validate-wiki.mjs
-          node --check plugins/less-openwiki/scripts/upstream-docs-report.mjs
-          node --check plugins/less-openwiki/hooks/less-openwiki-hook.mjs
-          node --check plugins/less-openwiki/runtime/storage.mjs
-          node --check plugins/less-openwiki/runtime/lifecycle.mjs
-          node --check plugins/less-openwiki/runtime/claims.mjs
-          node --check plugins/less-openwiki/runtime/evidence.mjs
-          node --check plugins/less-openwiki/runtime/okf.mjs
-          node --check plugins/less-openwiki/runtime/identity.mjs
-          node --check plugins/less-openwiki/runtime/vendor/yaml.mjs
+          node --check scripts/validate-wiki.mjs
+          node --check scripts/upstream-docs-report.mjs

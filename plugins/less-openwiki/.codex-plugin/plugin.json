@@ -1,7 +1,7 @@
 {
   "name": "less-openwiki",
-  "version": "0.4.1",
-  "description": "Repository documentation workflow with durable native lifecycle hooks.",
+  "version": "1.0.0",
+  "description": "Repository documentation workflow for your coding agent.",
   "author": {
     "name": "Biw Santang",
     "url": "https://github.com/biwsantang"
@@ -11,18 +11,13 @@
   "license": "MIT",
   "keywords": ["documentation", "repository", "wiki", "codex", "claude-code"],
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Less OpenWiki",
     "shortDescription": "Maintain repository documentation with your coding agent.",
-    "longDescription": "A repository documentation workflow that uses native lifecycle hooks for resumable pages, validation, provenance, and completion.",
+    "longDescription": "A skill that helps your coding agent create and maintain a focused, source-grounded repository wiki.",
     "developerName": "Biw Santang",
     "category": "Productivity",
-    "capabilities": [
-      "Documentation",
-      "Lifecycle hooks",
-      "Local repository tools"
-    ],
+    "capabilities": ["Documentation", "Local repository tools"],
     "defaultPrompt": [
       "Initialize documentation for this repository.",
       "Update the repository documentation for recent source changes.",

@@ -7,7 +7,7 @@
     {
       "name": "less-openwiki",
       "source": "./plugins/less-openwiki",
-      "description": "Native repository documentation workflow for Claude Code."
+      "description": "Repository documentation skill for Claude Code."
     }
   ]
 }
