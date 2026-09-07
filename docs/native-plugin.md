@@ -101,10 +101,12 @@ For an intentional change to a currently healthy Claim, the host can read the
 current page sidecar to inspect its IDs and evidence; hooks continue to reserve
 all durable Claims writes for reconciliation.
 
-Interrupted page work is never treated as complete: a durable skipped job
-blocks finalization and is reset to pending when the documentation run resumes.
-That makes the next active page explicit instead of allowing a partial run to
-publish as complete.
+When a page attempt must be abandoned, the host writes its current private
+intent as `{ "action": "skip" }`. The hook restores the exact Markdown and
+Claims snapshot from before page work, keeps its prior manifest coverage, then
+finalizes any remaining completed pages with an `interrupted` checkpoint. It
+clears the active run, so a later update plans the skipped page again rather
+than publishing the partial attempt as complete.
 
 Before an update begins, the lifecycle normalizes any factual page that lacks
 usable OKF front matter into a minimal, explicitly code-derived record. Existing

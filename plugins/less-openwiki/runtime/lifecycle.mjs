@@ -239,6 +239,17 @@ export async function checkpoint(root, input) {
   }
   if (state.phase !== "generating") return {};
   const current = currentJob(state);
+  if (current && targets.includes(pageIntentPath(root, current.path))) {
+    const intent = await readJson(pageIntentPath(root, current.path), {
+      required: true,
+    });
+    if (isSkipIntent(intent)) {
+      await skipCurrentPage(root, state, current);
+      return context(
+        `Restored ${current.path} after the skipped page attempt. The documentation checkpoint is interrupted; finish this run and start a fresh update to retry it.`,
+      );
+    }
+  }
   if (!current || !targets.includes(path.join(root, current.path))) return {};
   const source = await sourceSnapshot(root);
   if (source.fingerprint !== state.sourceFingerprint) {
@@ -285,6 +296,39 @@ export async function checkpoint(root, input) {
   );
 }
 
+function isSkipIntent(intent) {
+  return (
+    intent &&
+    typeof intent === "object" &&
+    !Array.isArray(intent) &&
+    Object.keys(intent).length === 1 &&
+    intent.action === "skip"
+  );
+}
+
+async function skipCurrentPage(root, state, current) {
+  const snapshot = await skippedPageSnapshot(root, state, current.path);
+  await rollbackPage(root, state, current.path);
+  await writeJson(lastUpdatePath(root), {
+    updatedAt: now(),
+    command: state.mode,
+    ...(state.baseGitHead ? { gitHead: state.baseGitHead } : {}),
+    model: state.actor.metadataModel,
+    status: "interrupted",
+    language: state.language,
+  });
+  current.status = "skipped";
+  delete current.completedBy;
+  state.skippedPageSnapshots = [
+    ...(state.skippedPageSnapshots ?? []).filter(
+      (entry) => entry.path !== current.path,
+    ),
+    snapshot,
+  ];
+  await writeRun(root, state);
+  await rm(pageIntentPath(root, current.path), { force: true });
+}
+
 function mayMutate(input) {
   const name = String(input.tool_name ?? input.toolName ?? input.name ?? "");
   return !/^(?:read|cat|list|ls|glob|grep|search|find)(?:[_ -]|$)/iu.test(name);
@@ -307,13 +351,17 @@ export async function finish(root) {
       stopReason: `Documentation remains incomplete: ${current.path}.`,
       systemMessage: `Less OpenWiki requires the assigned page before completion. ${pendingSummary(state)}`,
     };
-  const skipped = state.plan.pages.find((page) => page.status === "skipped");
-  if (skipped)
+  const skippedPages = new Set(
+    state.plan.pages
+      .filter((page) => page.status === "skipped")
+      .map((page) => page.path),
+  );
+  if (!(await hasDurableSkippedSnapshots(root, state, skippedPages)))
     return {
       continue: false,
-      stopReason: `Documentation must resume skipped work: ${skipped.path}.`,
+      stopReason: "Skipped documentation work must resume before finalization.",
       systemMessage:
-        "Less OpenWiki will retry skipped documentation work when the run resumes.",
+        "Less OpenWiki cannot finalize skipped work without its original page snapshots. Resume the documentation run to retry it.",
     };
   const sourceChangedBeforeFinish =
     (await sourceSnapshot(root)).fingerprint !== state.sourceFingerprint;
@@ -340,14 +388,16 @@ export async function finish(root) {
   await finalizeGeneratedProvenance(root, state);
   for (const file of pages)
     await refreshClaimsPageVersion(root, relative(root, file));
-  await replaceManifest(root, pages, state);
+  for (const page of skippedPages) await rollbackPage(root, state, page);
+  await replaceManifest(root, await factualPages(root), state, skippedPages);
   const sourceChanged =
     sourceChangedBeforeFinish ||
     (await sourceSnapshot(root)).fingerprint !== state.sourceFingerprint;
+  const interrupted = sourceChanged || skippedPages.size > 0;
   await writeJson(lastUpdatePath(root), {
     updatedAt: now(),
     command: state.mode,
-    ...(sourceChanged
+    ...(interrupted
       ? state.baseGitHead
         ? { gitHead: state.baseGitHead }
         : {}
@@ -355,16 +405,22 @@ export async function finish(root) {
         ? { gitHead: state.targetGitHead }
         : {}),
     model: state.actor.metadataModel,
-    status: sourceChanged ? "interrupted" : "complete",
+    status: interrupted ? "interrupted" : "complete",
     language: state.language,
   });
+  // Native finalizers operate on the complete wiki; restore skipped pages last
+  // so their pre-run Markdown and Claims bytes cannot inherit those changes.
+  for (const page of skippedPages) await rollbackPage(root, state, page);
   await rm(runPath(root), { force: true });
   await rm(rollbackRoot(root, state.runId), { recursive: true, force: true });
   await rm(intentRoot(root), { recursive: true, force: true });
   return {
-    systemMessage: sourceChanged
-      ? "Less OpenWiki documentation run is finalized, but repository source changed during the run. Run an update to reconcile it."
-      : "Less OpenWiki documentation run is complete and validated.",
+    systemMessage:
+      skippedPages.size > 0
+        ? "Less OpenWiki restored skipped page work and finalized the remaining documentation as interrupted. Run an update to retry the skipped page."
+        : sourceChanged
+          ? "Less OpenWiki documentation run is finalized, but repository source changed during the run. Run an update to reconcile it."
+          : "Less OpenWiki documentation run is complete and validated.",
   };
 }
 
@@ -435,6 +491,7 @@ function resetSkippedPageJobs(state) {
   state.plan.pages = state.plan.pages.map((page) =>
     page.status === "skipped" ? { ...page, status: "pending" } : page,
   );
+  delete state.skippedPageSnapshots;
   return true;
 }
 
@@ -871,6 +928,7 @@ function validateRun(state) {
     "beforeContentSnapshot",
     "preparedWiki",
     "plan",
+    "skippedPageSnapshots",
   ]);
   if (
     !state ||
@@ -894,7 +952,10 @@ function validateRun(state) {
     throw new Error(
       "invalid OpenWiki .run.json; refusing to discard resumable work",
     );
-  if (state.plan && !validPlan(state.plan))
+  if (
+    (state.plan && !validPlan(state.plan)) ||
+    !validSkippedPageSnapshots(state.skippedPageSnapshots, state.plan)
+  )
     throw new Error("invalid OpenWiki plan state");
 }
 function validUpdateMetadata(value) {
@@ -961,6 +1022,48 @@ function validPlan(value) {
           typeof page.completedBy === "string"),
     )
   );
+}
+function validSkippedPageSnapshots(value, plan) {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  const skipped = new Set(
+    plan?.pages
+      .filter((page) => page.status === "skipped")
+      .map((page) => page.path),
+  );
+  return (
+    value.length === skipped.size &&
+    value.every(
+      (snapshot) =>
+        snapshot &&
+        typeof snapshot === "object" &&
+        Object.keys(snapshot).every((key) =>
+          ["path", "markdown", "claims"].includes(key),
+        ) &&
+        typeof snapshot.path === "string" &&
+        skipped.has(snapshot.path) &&
+        typeof snapshot.markdown === "boolean" &&
+        typeof snapshot.claims === "boolean",
+    ) &&
+    new Set(value.map((snapshot) => snapshot.path)).size === value.length
+  );
+}
+async function hasDurableSkippedSnapshots(root, state, skippedPages) {
+  if (skippedPages.size === 0) return true;
+  if (
+    state.skippedPageSnapshots === undefined ||
+    !validSkippedPageSnapshots(state.skippedPageSnapshots, state.plan)
+  )
+    return false;
+  return Promise.all(
+    state.skippedPageSnapshots.map(async (snapshot) => {
+      const expected = await skippedPageSnapshot(root, state, snapshot.path);
+      return (
+        snapshot.markdown === expected.markdown &&
+        snapshot.claims === expected.claims
+      );
+    }),
+  ).then((results) => results.every(Boolean));
 }
 function isUuid(value) {
   return (
@@ -1060,10 +1163,20 @@ async function createRollback(root, state) {
   const base = rollbackRoot(root, state.runId);
   for (const page of state.initialPages) {
     const source = path.join(root, page);
-    if (!(await isFile(source))) continue;
-    const destination = path.join(base, page.slice("/openwiki/".length));
-    await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, await readFile(source));
+    if (await isFile(source)) {
+      const destination = path.join(base, page.slice("/openwiki/".length));
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, await readFile(source));
+    }
+    const claims = claimsPath(root, page.slice(1));
+    if (!(await isFile(claims))) continue;
+    const claimsBackup = path.join(
+      base,
+      ".claims",
+      page.slice("/openwiki/".length).replace(/\.md$/u, ".json"),
+    );
+    await mkdir(path.dirname(claimsBackup), { recursive: true });
+    await writeFile(claimsBackup, await readFile(claims));
   }
 }
 async function rollbackPage(root, state, page) {
@@ -1076,6 +1189,30 @@ async function rollbackPage(root, state, page) {
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, await readFile(backup));
   } else await rm(target, { force: true });
+  const claims = claimsPath(root, page);
+  const claimsBackup = path.join(
+    rollbackRoot(root, state.runId),
+    ".claims",
+    page.slice("openwiki/".length).replace(/\.md$/u, ".json"),
+  );
+  if (await isFile(claimsBackup)) {
+    await mkdir(path.dirname(claims), { recursive: true });
+    await writeFile(claims, await readFile(claimsBackup));
+  } else await rm(claims, { force: true });
+}
+async function skippedPageSnapshot(root, state, page) {
+  const base = rollbackRoot(root, state.runId);
+  return {
+    path: page,
+    markdown: await isFile(path.join(base, page.slice("openwiki/".length))),
+    claims: await isFile(
+      path.join(
+        base,
+        ".claims",
+        page.slice("openwiki/".length).replace(/\.md$/u, ".json"),
+      ),
+    ),
+  };
 }
 async function validatePage(root, page) {
   const file = path.join(root, page);
@@ -1099,12 +1236,18 @@ async function stampGenerated(root, page, actor) {
   if (next !== content)
     await writeFile(file, next.endsWith("\n") ? next : `${next}\n`, "utf8");
 }
-async function replaceManifest(root, pages, state) {
+async function replaceManifest(root, pages, state, preservePages = new Set()) {
+  const previous = await readManifest(root);
   const entries = {};
   for (const file of pages) {
     const page = relative(root, file);
+    const key = `/${page}`;
+    if (preservePages.has(page)) {
+      if (previous.pages[key]) entries[key] = previous.pages[key];
+      continue;
+    }
     const claims = await assertClaimsPageCurrent(root, page);
-    entries[`/${page}`] = {
+    entries[key] = {
       ...(state.targetGitHead ? { gitHead: state.targetGitHead } : {}),
       sourceFingerprint: state.sourceFingerprint,
       pageVersion: claims.pageVersion,

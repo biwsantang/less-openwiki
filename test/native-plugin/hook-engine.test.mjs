@@ -337,6 +337,199 @@ test("initialization replaces stale generated wiki state but preserves instructi
   );
 });
 
+test("a native skip restores page and Claims snapshots while preserving prior coverage", async (t) => {
+  const root = await fixture(t);
+  const page = path.join(root, "openwiki", "quickstart.md");
+  const originalPage =
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Original fixture documentation.\n---\n\n# Quickstart\n\nOriginal body.\n";
+  await mkdir(path.dirname(page), { recursive: true });
+  await writeFile(page, originalPage, "utf8");
+  const originalClaims = {
+    schemaVersion: 1,
+    pageVersion: hash(originalPage),
+    claims: [],
+    verification: { by: "openwiki/original", at: "2026-01-01T00:00:00.000Z" },
+  };
+  await writeJson(
+    path.join(root, "openwiki", ".claims", "quickstart.json"),
+    originalClaims,
+  );
+  const priorCoverage = {
+    sourceFingerprint: (await sourceSnapshot(root)).fingerprint,
+    pageVersion: hash(originalPage),
+    completedBy: "openwiki/original",
+  };
+  await writeJson(path.join(root, "openwiki", ".page-manifest.json"), {
+    schemaVersion: 1,
+    pages: { "/openwiki/quickstart.md": priorCoverage },
+  });
+
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the project documentation.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Refresh the entry point.",
+      },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const acceptedState = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(
+    await readFile(
+      path.join(
+        root,
+        "openwiki",
+        ".rollback",
+        acceptedState.runId,
+        "quickstart.md",
+      ),
+      "utf8",
+    ),
+    originalPage,
+  );
+
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Partial\ndescription: Partial work.\n---\n\n# Partial\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    ...originalClaims,
+    pageVersion: hash("partial"),
+  });
+  const skipIntent = path.join(root, "openwiki", ".intents", "quickstart.json");
+  await writeJson(skipIntent, { action: "skip" });
+  const skipped = invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/quickstart.json" },
+  });
+  assert.match(skipped.hookSpecificOutput.additionalContext, /restored/iu);
+  assert.equal(await readFile(page, "utf8"), originalPage);
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(root, "openwiki", ".claims", "quickstart.json"),
+        "utf8",
+      ),
+    ),
+    originalClaims,
+  );
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .plan.pages[0].status,
+    "skipped",
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .skippedPageSnapshots,
+    [{ path: "openwiki/quickstart.md", markdown: true, claims: true }],
+  );
+
+  const finalized = invoke(root, "stop", {
+    hook_event_name: "Stop",
+    cwd: root,
+  });
+  assert.match(finalized.systemMessage, /skipped page work/u);
+  await assert.rejects(
+    readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.equal(await readFile(page, "utf8"), originalPage);
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(root, "openwiki", ".claims", "quickstart.json"),
+        "utf8",
+      ),
+    ),
+    originalClaims,
+  );
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(root, "openwiki", ".page-manifest.json"),
+        "utf8",
+      ),
+    ).pages["/openwiki/quickstart.md"],
+    priorCoverage,
+  );
+  assert.equal(
+    JSON.parse(
+      await readFile(path.join(root, "openwiki", ".last-update.json"), "utf8"),
+    ).status,
+    "interrupted",
+  );
+});
+
+test("a native skip removes a newly planned page that had no pre-run snapshot", async (t) => {
+  const root = await fixture(t);
+  invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Initialize project documentation as a wiki.",
+  });
+  await writeJson(path.join(root, "openwiki", ".intents", "plan.json"), {
+    pages: [
+      {
+        path: "quickstart.md",
+        title: "Quickstart",
+        purpose: "Route readers.",
+      },
+    ],
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/plan.json" },
+  });
+  const page = path.join(root, "openwiki", "quickstart.md");
+  await writeFile(
+    page,
+    "---\ntype: concept\ntitle: Partial\ndescription: Partial work.\n---\n\n# Partial\n",
+    "utf8",
+  );
+  await writeJson(path.join(root, "openwiki", ".intents", "quickstart.json"), {
+    action: "skip",
+  });
+  invoke(root, "post-tool", {
+    hook_event_name: "PostToolUse",
+    cwd: root,
+    tool_input: { file_path: "openwiki/.intents/quickstart.json" },
+  });
+
+  const skippedState = JSON.parse(
+    await readFile(path.join(root, "openwiki", ".run.json"), "utf8"),
+  );
+  assert.deepEqual(skippedState.skippedPageSnapshots, [
+    { path: "openwiki/quickstart.md", markdown: false, claims: false },
+  ]);
+  await assert.rejects(readFile(page, "utf8"));
+
+  invoke(root, "stop", { hook_event_name: "Stop", cwd: root });
+  await assert.rejects(readFile(page, "utf8"));
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(root, "openwiki", ".page-manifest.json"),
+        "utf8",
+      ),
+    ).pages,
+    {},
+  );
+});
+
 test("repository evidence uses upstream V1 whole-file and relocating line-range versions", async (t) => {
   const root = await fixture(t);
   await writeFile(
@@ -2142,7 +2335,7 @@ test("a resumed run retries a durable skipped page", async (t) => {
   await writeJson(runFile, interrupted);
 
   const stopped = invoke(root, "stop", { hook_event_name: "Stop", cwd: root });
-  assert.match(stopped.stopReason, /skipped work/u);
+  assert.match(stopped.stopReason, /skipped .*work/iu);
   const resumed = invoke(root, "user-prompt", {
     hook_event_name: "UserPromptSubmit",
     cwd: root,

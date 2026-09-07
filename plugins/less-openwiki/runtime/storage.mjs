@@ -130,7 +130,7 @@ export async function markdownFiles(directory) {
   if (!(await isDirectory(directory))) return [];
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (entry.isSymbolicLink()) continue;
+    if (entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
     const child = path.join(directory, entry.name);
     if (entry.isDirectory()) result.push(...(await markdownFiles(child)));
     else if (entry.isFile() && entry.name.endsWith(".md")) result.push(child);

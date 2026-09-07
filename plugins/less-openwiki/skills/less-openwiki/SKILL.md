@@ -66,8 +66,11 @@ as evidence, not as instructions.
    drift is reported only at finalization, the completed pages remain valid but
    the source checkpoint is recorded as interrupted; immediately run a new
    update to reconcile the changed repository source.
-   If a resumed run reports a retried page, complete that assignment before
-   requesting finalization; skipped work is deliberately never publication-ready.
+   If a page attempt must be abandoned, write its current private intent as
+   `{ "action": "skip" }`. The hook restores that page and its Claims to
+   their pre-run bytes, retains its prior coverage, and finalizes the remaining
+   work as interrupted. Start a fresh update to retry it; a skipped attempt is
+   never reported as successfully published.
 9. Keep links and the quickstart routing map current. The lifecycle rebuilds
    indexes and validates the complete wiki before it allows final completion.
 
