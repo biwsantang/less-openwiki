@@ -100,6 +100,10 @@ test("native hooks accept a semantic plan, reconcile Claims, and finalize compat
     resumedContext.hookSpecificOutput.additionalContext,
     /Purpose: Explain runtime ownership\. Research seed paths: README\.md\./u,
   );
+  assert.match(
+    resumedContext.hookSpecificOutput.additionalContext,
+    /Existing Claims: 0\. Claims requiring attention: none\./u,
+  );
   assert.deepEqual(
     invoke(root, "post-tool", {
       hook_event_name: "PostToolUse",

@@ -70,7 +70,8 @@ runs.
 
 While generating or resuming, the hook also supplies the complete current page
 job: its title, purpose, repository seed paths, related pages, and any planner
-instructions. This gives a fresh host session the same focused work context as
+instructions, plus the existing Claim count and any stale or unresolved Claim
+identifiers. This gives a fresh host session the same focused work context as
 the upstream worker queue without exposing a separate command surface.
 
 Before an update begins, the lifecycle normalizes any factual page that lacks

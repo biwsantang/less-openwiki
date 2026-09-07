@@ -60,7 +60,7 @@ export async function sessionContext(root) {
       "A documentation run is waiting for its semantic plan. Write the private plan intent before authoring Markdown.",
     );
   return context(
-    `A documentation run (${state.runId}) is active. ${pendingSummary(state)}`,
+    `A documentation run (${state.runId}) is active. ${await activeJobSummary(root, state)}`,
   );
 }
 
@@ -217,7 +217,9 @@ export async function checkpoint(root, input) {
   const targets = extractTargets(input, root);
   if (state.phase === "planning" && targets.includes(planIntentPath(root))) {
     await acceptPlan(root, state);
-    return context(`Documentation plan accepted. ${pendingSummary(state)}`);
+    return context(
+      `Documentation plan accepted. ${await activeJobSummary(root, state)}`,
+    );
   }
   if (state.phase !== "generating") return {};
   const current = currentJob(state);
@@ -262,7 +264,9 @@ export async function checkpoint(root, input) {
   current.completedBy = actorFor();
   await rm(pageIntentPath(root, current.path), { force: true });
   await writeRun(root, state);
-  return context(`Recorded ${current.path}. ${pendingSummary(state)}`);
+  return context(
+    `Recorded ${current.path}. ${await activeJobSummary(root, state)}`,
+  );
 }
 
 function mayMutate(input) {
@@ -916,6 +920,20 @@ function pendingSummary(state) {
   ];
   return details.join(" ");
 }
+
+async function activeJobSummary(root, state) {
+  const current = currentJob(state);
+  if (!current) return pendingSummary(state);
+  const sidecar = await readJson(claimsPath(root, current.path));
+  const existingClaimCount = Array.isArray(sidecar?.claims)
+    ? sidecar.claims.length
+    : 0;
+  const issues = (await preflightClaims(root)).filter(
+    (issue) => issue.page === `/${current.path}`,
+  );
+  return `${pendingSummary(state)} Existing Claims: ${existingClaimCount}. Claims requiring attention: ${issues.length ? issues.map((issue) => `${issue.claimId} (${issue.kind}: ${issue.resources.join(", ")})`).join("; ") : "none"}.`;
+}
+
 function contextSentence(label, value) {
   return `${label}: ${value}${/[.!?]$/u.test(value) ? "" : "."}`;
 }
