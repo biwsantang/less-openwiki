@@ -23,6 +23,7 @@ export function claimsPath(root, page) {
 export async function preflightClaims(root) {
   const issues = [];
   const resolutions = new Map();
+  const owners = new Map();
   const claimsRoot = path.join(root, "openwiki", ".claims");
   if (!(await isFile(claimsRoot)) && !(await directoryExists(claimsRoot)))
     return issues;
@@ -32,6 +33,12 @@ export async function preflightClaims(root) {
     if (!isFactualPage(page) || !(await isFile(path.join(root, page))))
       continue;
     for (const claim of sidecar.claims ?? []) {
+      const owner = owners.get(claim.id);
+      if (owner && owner !== page)
+        throw new Error(
+          `Duplicate Claim identifier ${claim.id} across ${owner} and ${page}`,
+        );
+      owners.set(claim.id, page);
       const changed = [];
       const unresolved = [];
       for (const evidence of claim.evidence ?? []) {
@@ -179,6 +186,7 @@ export async function reconcileClaims(root, page, intent, actor, at = now()) {
     throw new Error(
       `Completed factual page ${page} must retain or establish at least one material Claim.`,
     );
+  await assertClaimOwnershipAvailable(root, page, next);
   await writeJson(file, {
     schemaVersion: 1,
     pageVersion: hash(await readFile(path.join(root, page))),
@@ -186,6 +194,22 @@ export async function reconcileClaims(root, page, intent, actor, at = now()) {
     verification: { by: actor, at },
   });
   return next;
+}
+
+async function assertClaimOwnershipAvailable(root, page, claims) {
+  const ids = new Set(claims.map(({ id }) => id));
+  const claimsRoot = path.join(root, "openwiki", ".claims");
+  if (!(await directoryExists(claimsRoot))) return;
+  for (const file of await jsonFiles(claimsRoot)) {
+    const owner = `openwiki/${relative(claimsRoot, file).replace(/\.json$/u, ".md")}`;
+    if (owner === page || !isFactualPage(owner)) continue;
+    const persisted = await loadClaims(file, { required: true });
+    const duplicate = persisted.claims.find(({ id }) => ids.has(id));
+    if (duplicate)
+      throw new Error(
+        `Claim ${duplicate.id} is already owned by ${owner}, not ${page}`,
+      );
+  }
 }
 
 async function claimHasEvidenceIssue(root, claim) {

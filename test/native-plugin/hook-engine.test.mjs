@@ -576,6 +576,41 @@ test("Claims preflight groups multiple stale evidence records per Claim", async 
   ]);
 });
 
+test("Claims preflight rejects duplicate identifiers across factual pages", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  for (const page of ["first.md", "second.md"]) {
+    await writeFile(
+      path.join(root, "openwiki", page),
+      `---\ntype: concept\n---\n\n# ${page}\n`,
+      "utf8",
+    );
+    await writeJson(
+      path.join(root, "openwiki", ".claims", page.replace(/\.md$/u, ".json")),
+      {
+        schemaVersion: 1,
+        pageVersion: hash(await readFile(path.join(root, "openwiki", page))),
+        verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+        claims: [
+          {
+            id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+            statement: "The fixture exists.",
+            evidence: [
+              {
+                resource: "repo://README.md",
+                version: (
+                  await resolveRepositoryEvidence(root, "repo://README.md")
+                ).version,
+              },
+            ],
+          },
+        ],
+      },
+    );
+  }
+  await assert.rejects(preflightClaims(root), /Duplicate Claim identifier/u);
+});
+
 test("the update window contains visible committed and untracked source paths", async (t) => {
   const root = await fixture(t);
   execFileSync("git", ["config", "user.email", "fixture@example.com"], {
