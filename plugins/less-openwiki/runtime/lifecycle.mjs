@@ -68,7 +68,8 @@ export async function startOrResume(root, input) {
     lastUpdate.gitHead &&
     changedPaths.length === 0 &&
     claimIssues.length === 0 &&
-    completeCoverage
+    completeCoverage &&
+    !hasExplicitLanguageRequest(input)
   ) {
     await fastForwardManifestCoverage(root, existingPages, source);
     await writeJson(lastUpdatePath(root), {
@@ -500,6 +501,14 @@ function primaryLanguage(language) {
   } catch {
     return language;
   }
+}
+
+function hasExplicitLanguageRequest(input) {
+  if (typeof input.language === "string" && input.language.trim()) return true;
+  const prompt = String(input.prompt ?? input.user_prompt ?? "");
+  return /\b(?:language|english|french|spanish|german|italian|portuguese|chinese|japanese|korean|thai|vietnamese|arabic|russian|ukrainian|turkish|hindi)\b/iu.test(
+    prompt,
+  );
 }
 
 function resolveLanguage(input) {

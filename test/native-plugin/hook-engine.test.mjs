@@ -789,6 +789,78 @@ test("a docs-only commit fast-forwards native manifest coverage during no-op", a
   );
 });
 
+test("an explicit language request bypasses a clean native update no-op", async (t) => {
+  const root = await fixture(t);
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: root });
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  const pageVersion = hash(
+    await readFile(path.join(root, "openwiki", "quickstart.md")),
+  );
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion,
+    claims: [
+      {
+        id: "a3bd33b5-3545-4551-a84d-82a68d92b3ff",
+        statement: "The quickstart exists.",
+        evidence: [
+          {
+            resource: "repo://README.md",
+            version: (await resolveRepositoryEvidence(root, "repo://README.md"))
+              .version,
+          },
+        ],
+      },
+    ],
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+  });
+  await writeJson(path.join(root, "openwiki", ".page-manifest.json"), {
+    schemaVersion: 1,
+    pages: {
+      "/openwiki/quickstart.md": {
+        sourceFingerprint:
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        pageVersion,
+      },
+    },
+  });
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: root,
+  });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  await writeJson(path.join(root, "openwiki", ".last-update.json"), {
+    updatedAt: new Date().toISOString(),
+    command: "update",
+    gitHead: head,
+    model: "openwiki/0.5.0",
+    status: "complete",
+    language: "en",
+  });
+  const result = invoke(root, "user-prompt", {
+    hook_event_name: "UserPromptSubmit",
+    cwd: root,
+    prompt: "Update the documentation in French.",
+  });
+  assert.match(result.hookSpecificOutput.additionalContext, /started/u);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, "openwiki", ".run.json"), "utf8"))
+      .phase,
+    "planning",
+  );
+});
+
 test("source content drift is detected even when Git status stays modified", async (t) => {
   const root = await fixture(t);
   await writeFile(
