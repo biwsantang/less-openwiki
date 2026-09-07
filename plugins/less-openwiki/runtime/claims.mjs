@@ -53,13 +53,41 @@ export async function preflightClaims(root) {
 export async function reconcileClaims(root, page, intent, actor) {
   const file = claimsPath(root, page);
   const existing = (await loadClaims(file))?.claims ?? [];
-  const proposed = intent?.claims;
-  if (!Array.isArray(proposed) || proposed.length === 0)
+  const proposed = intent?.claims ?? [];
+  const confirmed = intent?.confirmedClaimIds ?? [];
+  const retracted = intent?.retractedClaimIds ?? [];
+  if (
+    !Array.isArray(proposed) ||
+    !Array.isArray(confirmed) ||
+    !Array.isArray(retracted) ||
+    (proposed.length === 0 && confirmed.length === 0 && retracted.length === 0)
+  )
     throw new Error(
-      `${page} needs a private page intent with at least one material Claim and repository evidence`,
+      `${page} needs a private page intent with a Claim decision and repository evidence`,
     );
   const byId = new Map(existing.map((claim) => [claim.id, claim]));
-  const retracted = new Set(intent.retractedClaimIds ?? []);
+  if (byId.size !== existing.length)
+    throw new Error(`${page} has duplicate persisted Claim identifiers`);
+  const decisions = new Set();
+  const retractedIds = new Set(retracted.map((id) => String(id).trim()));
+  for (const id of confirmed.map((value) => String(value).trim())) {
+    if (!byId.has(id))
+      throw new Error(`Claim ${id || "(empty)"} is not owned by ${page}`);
+    if (decisions.has(id))
+      throw new Error(
+        `Claim ${id} has more than one reconciliation decision for ${page}`,
+      );
+    decisions.add(id);
+  }
+  for (const id of retractedIds) {
+    if (!byId.has(id))
+      throw new Error(`Claim ${id || "(empty)"} is not owned by ${page}`);
+    if (decisions.has(id))
+      throw new Error(
+        `Claim ${id} has more than one reconciliation decision for ${page}`,
+      );
+    decisions.add(id);
+  }
   const next = [];
   for (const raw of proposed) {
     const statement = String(raw.statement ?? "").trim();
@@ -80,29 +108,61 @@ export async function reconcileClaims(root, page, intent, actor) {
         throw new Error(`Claim evidence cannot be resolved: ${resource}`);
       evidence.push({ resource: resolved.resource, version: resolved.version });
     }
-    const current = raw.id
-      ? byId.get(raw.id)
+    const requestedId = raw.id ? String(raw.id).trim() : undefined;
+    const current = requestedId
+      ? byId.get(requestedId)
       : existing.find(
           (claim) =>
             claim.statement === statement &&
             sameEvidence(claim.evidence, evidence),
         );
+    if (requestedId && !current)
+      throw new Error(`Claim ${requestedId} is not owned by ${page}`);
+    if (current) {
+      if (decisions.has(current.id))
+        throw new Error(
+          `Claim ${current.id} has more than one reconciliation decision for ${page}`,
+        );
+      decisions.add(current.id);
+    }
     next.push({ id: current?.id ?? randomUUID(), statement, evidence });
   }
   for (const claim of existing) {
-    if (retracted.has(claim.id)) continue;
+    if (await claimHasEvidenceIssue(root, claim)) {
+      if (!decisions.has(claim.id))
+        throw new Error(
+          `Claim ${claim.id} is stale or unresolved and requires an explicit confirm, update, or retraction`,
+        );
+    }
+    if (retractedIds.has(claim.id)) continue;
     if (
       !next.some((candidate) => candidate.id === claim.id) &&
       !intent?.replaceAll
     )
       next.push(claim);
   }
+  if (next.length === 0)
+    throw new Error(
+      `Completed factual page ${page} must retain or establish at least one material Claim.`,
+    );
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(
     file,
     `${JSON.stringify({ schemaVersion: 1, pageVersion: hash(await readFile(path.join(root, page))), claims: next, verification: { by: actor, at: now() } }, null, 2)}\n`,
   );
   return next;
+}
+
+async function claimHasEvidenceIssue(root, claim) {
+  for (const evidence of claim.evidence ?? []) {
+    const current = await resolveRepositoryEvidence(
+      root,
+      evidence.resource,
+      evidence.version,
+    );
+    if (!current || current.version !== evidence.version) return true;
+  }
+  return false;
 }
 
 export async function removeClaims(root, page) {

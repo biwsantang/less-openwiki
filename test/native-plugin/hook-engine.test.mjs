@@ -12,6 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { reconcileClaims } from "../../plugins/less-openwiki/runtime/claims.mjs";
 import { resolveRepositoryEvidence } from "../../plugins/less-openwiki/runtime/evidence.mjs";
 import {
   hash,
@@ -253,6 +254,61 @@ test("an update plan adds omitted work for stale Claims", async (t) => {
     ["openwiki/quickstart.md"],
   );
   assert.deepEqual(state.plan.pages[0].seedPaths, ["README.md"]);
+});
+
+test("a stale Claim requires an explicit reconciliation decision", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "openwiki", ".claims"), { recursive: true });
+  await mkdir(path.join(root, "openwiki"), { recursive: true });
+  await writeFile(
+    path.join(root, "openwiki", "quickstart.md"),
+    "---\ntype: concept\ntitle: Quickstart\ndescription: Existing.\n---\n\n# Quickstart\n",
+    "utf8",
+  );
+  const staleId = "a3bd33b5-3545-4551-a84d-82a68d92b3ff";
+  await writeJson(path.join(root, "openwiki", ".claims", "quickstart.json"), {
+    schemaVersion: 1,
+    pageVersion:
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    verification: { by: "openwiki/0.5.0", at: new Date().toISOString() },
+    claims: [
+      {
+        id: staleId,
+        statement: "The fixture exists.",
+        evidence: [{ resource: "repo://README.md", version: "stale" }],
+      },
+    ],
+  });
+  await assert.rejects(
+    reconcileClaims(
+      root,
+      "openwiki/quickstart.md",
+      {
+        claims: [
+          {
+            statement: "A separate fact.",
+            evidence: [{ resource: "repo://README.md" }],
+          },
+        ],
+      },
+      "openwiki/0.5.0",
+    ),
+    /requires an explicit confirm/u,
+  );
+  await reconcileClaims(
+    root,
+    "openwiki/quickstart.md",
+    {
+      retractedClaimIds: [staleId],
+      claims: [
+        {
+          statement: "The replacement fact is supported by the fixture.",
+          evidence: [{ resource: "repo://README.md" }],
+        },
+      ],
+    },
+    "openwiki/0.5.0",
+  );
 });
 
 test("the update window contains visible committed and untracked source paths", async (t) => {
