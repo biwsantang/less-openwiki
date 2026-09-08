@@ -39,8 +39,8 @@ and review. The wiki is ordinary repository content, not a generated protocol.
 4. Write or revise ordinary Markdown pages. Preserve accurate existing material
    on updates; remove or correct claims the current source no longer supports.
 5. Update `quickstart.md` whenever pages are added, removed, moved, or materially
-   regrouped. Update only the marker-owned block in root `AGENTS.md` or
-   `CLAUDE.md`, preserving surrounding user content.
+   regrouped. When useful, add the wiki routing line to root `AGENTS.md` or
+   `CLAUDE.md` without replacing existing user guidance.
 6. Validate the finished wiki: every factual page has usable front matter, links
    resolve, source paths exist, navigation is current, and no hidden lifecycle
    artifacts were created. Run the repository's wiki validator when available.

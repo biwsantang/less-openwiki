@@ -15,7 +15,7 @@ read and maintain directly.
   tests instead of mirroring directories.
 - Grounds factual text in current repository source and tests.
 - Maintains plain front matter, navigation, `quickstart.md`, and optional root
-  `AGENTS.md` / `CLAUDE.md` routing blocks.
+  `AGENTS.md` / `CLAUDE.md` routing guidance.
 - Honors repository-owned `wiki/INSTRUCTIONS.md` and `.openwikiignore`.
 - Repairs stale documentation by reviewing current Markdown and source changes.
 - Produces an upstream migration report for plugin maintainers.

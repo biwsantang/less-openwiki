@@ -28,7 +28,7 @@ Keep responsibilities direct:
 
 - The skill directs research, planning, writing, and update review.
 - References provide detailed guidance only when the task needs it.
-- Generated output is ordinary Markdown and optional marker-owned routing blocks.
+- Generated output is ordinary Markdown and optional plain routing guidance.
 - The agent reports evidence reviewed; it does not claim hidden lifecycle state,
   automatic rollback, or a machine-certified no-op.
 
