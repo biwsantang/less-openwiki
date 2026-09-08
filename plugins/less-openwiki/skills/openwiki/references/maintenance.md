@@ -23,19 +23,15 @@ than one conceptual page.
 
 ## Root agent routing
 
-When the repository benefits from it, maintain one block in each root guidance
-file using these markers:
+When the repository benefits from it, add this line to each root guidance file
+when it is absent:
 
 ```markdown
-<!-- OPENWIKI:START -->
-
 Read `wiki/quickstart.md` for the repository documentation map.
-<!-- OPENWIKI:END -->
 ```
 
-Replace only one valid marker-owned block. Preserve all text outside it. If a
-file has malformed or duplicated markers, report the problem instead of
-guessing which content to replace.
+Preserve all existing guidance. If the file has conflicting routing guidance,
+ask before replacing it; never infer ownership of surrounding text.
 
 ## Completion
 

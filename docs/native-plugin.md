@@ -44,8 +44,8 @@ deterministic state machine.
 2. It makes a concise page plan in the task conversation.
 3. It authors or revises ordinary Markdown pages with simple front matter and
    visible source references.
-4. It maintains `quickstart.md` and, when useful, marker-owned routing blocks
-   in root `AGENTS.md` and `CLAUDE.md`.
+4. It maintains `quickstart.md` and, when useful, plain routing guidance in
+   root `AGENTS.md` and `CLAUDE.md`.
 5. It reviews the diff, links, source paths, and navigation before reporting the
    work completed.
 
